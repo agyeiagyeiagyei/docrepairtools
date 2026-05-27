@@ -88,12 +88,24 @@ Mismatches are sorted by severity. With `--ai claude` (or `openai` / `gemini`), 
 
 More detail → [docs/concepts.md](docs/concepts.md).
 
+## Live audit panel inside Glyphs.app
+
+For a floating Vanilla window that shows width mismatches in real time while you edit, symlink [`examples/glyphs/width_audit_panel.py`](examples/glyphs/width_audit_panel.py) into Glyphs's user-scripts folder:
+
+```bash
+ln -sf "$(pwd)/examples/glyphs/width_audit_panel.py" \
+    "$HOME/Library/Application Support/Glyphs 3/Scripts/Width Audit Panel.py"
+```
+
+Then in Glyphs: hold Option + click the Script menu → Reload Scripts, and the panel appears under **Script → Width Audit Panel**. It reuses the same `[instances.*]` references from `~/.glyph-audit/config.toml` that the CLI does — no extra setup. Run the menu item again to toggle it off. Details → [examples/glyphs/README.md](examples/glyphs/README.md).
+
 ## Documentation
 
 - [docs/cli.md](docs/cli.md) — full flag reference, exit codes, and recipes
 - [docs/configuration.md](docs/configuration.md) — config file schema, all five reference forms (static, VF, system, Glyphs source, Google Fonts)
 - [docs/concepts.md](docs/concepts.md) — what each tier covers, how rows are tagged, how to read the report
 - [docs/ai-summary.md](docs/ai-summary.md) — `--ai` setup, custom prompts, privacy notes
+- [examples/glyphs/README.md](examples/glyphs/README.md) — Glyphs.app live-audit panel setup and usage
 
 ## Limitations
 
