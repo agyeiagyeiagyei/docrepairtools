@@ -84,6 +84,51 @@ glyph-audit --target sources/MyTypeface.glyphspackage \
             --from-config
 ```
 
+## Recipes
+
+### One-line `make audit` target
+
+Once `[defaults]` and `[instances.*]` are in `~/.glyph-audit/config.toml`, this is enough to wire the audit into a typeface project's Makefile:
+
+```make
+TARGET ?= sources/MyTypeface.glyphspackage
+audit:
+	-glyph-audit --target "$(TARGET)"
+```
+
+```bash
+make audit                                                # default target
+make audit TARGET=sources/MyTypeface-working.glyphspackage
+```
+
+The leading `-` tells `make` to ignore `glyph-audit`'s exit code 1 (the "I found mismatches" signal — expected during proofing, not a build failure).
+
+### Shell alias
+
+For projects without a Makefile, a shell function gives you the same ergonomics:
+
+```bash
+# in ~/.zshrc or ~/.bashrc
+audit() {
+  glyph-audit --target "${1:-sources/MyTypeface.glyphspackage}"
+}
+```
+
+```bash
+audit                                                # uses the default
+audit sources/MyTypeface-working.glyphspackage
+```
+
+### Per-project config
+
+Working on multiple typefaces? Drop a `.glyph-audit.toml` alongside the source and point `--config` at it instead of the global file:
+
+```bash
+glyph-audit --target sources/MyTypeface.glyphspackage --config .glyph-audit.toml
+```
+
+The per-project file accepts the same `[defaults]` / `[instances.*]` / `[providers.*]` sections. Just don't commit it if it contains API keys.
+
 ## Precedence
 
 Resolved in this order, highest first:

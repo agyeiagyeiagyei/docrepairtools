@@ -29,11 +29,11 @@
 #   [defaults]
 #   filter      = "yellow"     # only audit glyphs marked yellow in Glyphs.app
 #   from_config = true         # auto-build pairs from [instances.*] below
+#   output      = "glyph-audit-report.md"
 #   title       = "Mytypeface vs Reference"
 #   ai          = "claude"     # adds AI summary to every run
 #
 # Other recognised keys:
-#   output           "path/to/report.md"
 #   tolerance        1.0
 #   prompt           "path/to/custom-prompt.md"
 #   no_normalize_upm false
@@ -147,6 +147,7 @@
 # [defaults]
 # filter      = "yellow"
 # from_config = true
+# output      = "glyph-audit-report.md"
 
 # [instances.Regular]
 # ref = "/path/to/your/reference-Regular.ttf"

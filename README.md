@@ -32,6 +32,7 @@ Set up `~/.glyph-audit/config.toml` so daily runs are one flag:
 [defaults]
 filter      = "ready"
 from_config = true
+output      = "glyph-audit-report.md"
 
 [instances.Regular]
 ref = "/path/to/Reference-Regular.ttf"
@@ -47,6 +48,33 @@ glyph-audit --target sources/MyTypeface.glyphspackage
 ```
 
 References can be static TTF/OTF, variable fonts (with axis pinning), system-installed fonts, Glyphs sources, or Google Fonts. Full schema and examples → [docs/configuration.md](docs/configuration.md).
+
+### Make it even shorter
+
+Once the config is in place, wrap it in your build system or shell. A `Makefile` recipe pairs nicely with the rest of a typeface project:
+
+```make
+TARGET ?= sources/MyTypeface.glyphspackage
+audit:
+	-glyph-audit --target "$(TARGET)"
+```
+
+```bash
+make audit                                                # default target
+make audit TARGET=sources/MyTypeface-working.glyphspackage # the working file
+```
+
+The leading `-` lets `make` ignore `glyph-audit`'s non-zero exit when mismatches are found — that's the audit's normal "I found something" signal, not a build failure.
+
+### Multiple typefaces?
+
+The defaults above live in `~/.glyph-audit/config.toml` so they apply to every project on your machine. If you work on more than one typeface, drop a per-project config alongside the source and point at it explicitly:
+
+```bash
+glyph-audit --target sources/MyTypeface.glyphspackage --config .glyph-audit.toml
+```
+
+`.glyph-audit.toml` accepts the same `[defaults]` and `[instances.*]` sections. See [docs/configuration.md#project-local-config](docs/configuration.md#project-local-config) for the gotchas (notably: don't commit it if it holds API keys).
 
 ## What the report shows
 
