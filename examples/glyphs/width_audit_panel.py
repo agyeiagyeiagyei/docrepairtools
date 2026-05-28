@@ -367,10 +367,20 @@ class WidthAuditPanel:
             return
         item = sender.get()[sel[0]]
         name = item.get("_name") or item["name"].split(" ")[0]
+        master_idx = self.w.masterMenu.get()
         try:
-            self.font.newTab("/" + name)
+            # Switch the document to the master the row was audited against,
+            # then open the glyph. Setting it on the returned tab too pins the
+            # new edit view to that master if Glyphs ever decouples them.
+            self.font.masterIndex = master_idx
+            tab = self.font.newTab("/" + name)
+            if tab is not None:
+                try:
+                    tab.masterIndex = master_idx
+                except Exception:
+                    pass
         except Exception:
-            pass
+            traceback.print_exc()
 
 
 # Reference loading is cheap-but-not-free; cache across refreshes (and across
