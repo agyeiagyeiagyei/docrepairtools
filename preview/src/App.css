@@ -1,0 +1,247 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Controls bar */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.controls label {
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.controls select {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--panel-bg);
+}
+
+.controls .toggle {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.controls .toggle.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.controls .size-slider {
+  width: 120px;
+}
+
+.controls .separator {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+}
+
+/* Panels */
+.panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel {
+  padding: 32px;
+  overflow-y: auto;
+}
+
+.panel:first-child {
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.panel-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  font-family: system-ui, sans-serif;
+}
+
+.text-block {
+  position: relative;
+}
+
+.text-block:first-of-type {
+  margin-bottom: 24px;
+}
+
+.panel .editable {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  margin: 0;
+  font-variant-ligatures: none;
+  /* Kerning is off too: with kerning on, the two fonts apply *different*
+   * pair adjustments to identical glyph-advance widths, so the same
+   * paragraph wraps at different positions left vs right and the
+   * side-by-side comparison breaks. With kern off + matched advances,
+   * line breaks line up exactly. */
+  font-kerning: none;
+  font-feature-settings: "liga" 0, "clig" 0, "dlig" 0, "hlig" 0, "calt" 0, "kern" 0;
+  -webkit-font-smoothing: antialiased;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.panel .editable:focus {
+  outline: none;
+}
+
+
+.panel .body {
+  min-height: 200px;
+}
+
+/* Missing glyph indicator — only on the left (proof) panel */
+.panel:first-child .missing-glyph {
+  text-decoration: underline wavy #dc2626;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+/* Feature menu */
+.feature-menu {
+  position: relative;
+}
+
+.feature-menu-trigger {
+  font-family: system-ui, sans-serif;
+}
+
+.feature-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  min-width: 280px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 4px 0;
+}
+
+.feature-menu-group {
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.feature-menu-group:first-of-type {
+  border-top: none;
+}
+
+.feature-menu-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-family: system-ui, sans-serif;
+  cursor: default;
+}
+
+.feature-menu-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  font-family: system-ui, sans-serif;
+}
+
+.feature-menu-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.feature-menu-item:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.feature-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.feature-menu-clear {
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.feature-tag {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 40px;
+}
+
+.feature-name {
+  flex: 1;
+}
+
+.feature-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.feature-dot-compiled   { background: #16a34a; }
+.feature-dot-missing    { background: #f59e0b; }
+.feature-dot-needs-env  { background: #94a3b8; }
+.feature-dot-disabled   { background: #cbd5e1; }
+
+/* Banner */
+.banner {
+  padding: 8px 24px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 13px;
+  text-align: center;
+}

@@ -88,6 +88,22 @@ Mismatches are sorted by severity. With `--ai claude` (or `openai` / `gemini`), 
 
 More detail → [docs/concepts.md](docs/concepts.md).
 
+## Preview — side-by-side proof viewer
+
+A React+Vite app at [`preview/`](preview/) renders your work-in-progress font next to a reference in two synced editable panels. Type in the left (proof) panel; the right mirrors verbatim against whichever reference font you bundle, so identical advance widths produce identical line wraps — the moment they diverge, you can see exactly where.
+
+It reads the same `[instances.*]` block in `~/.glyph-audit/config.toml` that the CLI uses, so once the audit is set up the preview needs no extra config:
+
+```bash
+# Build the proof font + manifests from your source:
+python preview/build.py --source sources/MyTypeface.glyphspackage
+
+# Start the dev server (in another terminal):
+cd preview && npm install && npm run dev
+```
+
+The build script writes `preview/public/{proof-font.ttf, proof-config.json, available-{chars,features}.json}`; the React app polls those every 3 s, so a re-build (or `build.py --watch`) hot-reloads the panels without manual refresh. Setup, CLI reference, and licensing notes → [preview/README.md](preview/README.md).
+
 ## Live audit panel inside Glyphs.app
 
 For a floating Vanilla window that shows width mismatches in real time while you edit, symlink [`examples/glyphs/width_audit_panel.py`](examples/glyphs/width_audit_panel.py) into Glyphs's user-scripts folder:
@@ -105,6 +121,7 @@ Then in Glyphs: hold Option + click the Script menu → Reload Scripts, and the 
 - [docs/configuration.md](docs/configuration.md) — config file schema, all five reference forms (static, VF, system, Glyphs source, Google Fonts)
 - [docs/concepts.md](docs/concepts.md) — what each tier covers, how rows are tagged, how to read the report
 - [docs/ai-summary.md](docs/ai-summary.md) — `--ai` setup, custom prompts, privacy notes
+- [preview/README.md](preview/README.md) — side-by-side proof viewer (React/Vite app) setup, CLI, and architecture
 - [examples/glyphs/README.md](examples/glyphs/README.md) — Glyphs.app live-audit panel setup and usage
 
 ## Limitations

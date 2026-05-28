@@ -1,0 +1,33 @@
+/* All @font-face declarations are injected at runtime by App.jsx based on
+ * proof-config.json — the proof font from the build script, plus any
+ * reference fonts the user wired up. This keeps the static stylesheet
+ * generic (no typeface-specific identifiers) and lets the same React
+ * bundle proof any project. */
+
+:root {
+  --bg: #fafafa;
+  --panel-bg: #fff;
+  --border: #e0e0e0;
+  --text: #1a1a1a;
+  --text-muted: #666;
+  --accent: #2563eb;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
