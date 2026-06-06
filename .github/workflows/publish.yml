@@ -1,0 +1,84 @@
+name: Publish to PyPI
+
+# Fires on pushed tags of the form `v0.1.0` etc. Builds sdist + wheel
+# with `python -m build`, then uploads via PyPI's OIDC trusted-publisher
+# flow — no long-lived API token in the repo. To enable:
+#
+#   1. On PyPI: project settings → publishing → "Add a new publisher"
+#      with owner=agyeiagyeiagyei, repo=GlyphAudit, workflow=publish.yml,
+#      environment=pypi
+#   2. In this repo: Settings → Environments → "New environment" named
+#      `pypi`. Optionally add required reviewers for an approval gate.
+#   3. Push a tag, e.g. `git tag v0.1.0 && git push --tags`.
+#
+# To do a dry run, push a tag like `v0.1.0-rc1` — this workflow builds
+# and shows the dists in the run artifacts but won't upload (only the
+# `if-no-files-found: error` job runs).
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build twine
+
+      - name: Verify version tag matches pyproject
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PROJECT_VERSION="$(python -c 'import tomllib,pathlib;print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          # Strip any -rcN suffix from the tag for comparison.
+          BASE_TAG="${TAG_VERSION%%-*}"
+          if [ "$BASE_TAG" != "$PROJECT_VERSION" ]; then
+            echo "Tag $TAG_VERSION (base $BASE_TAG) does not match pyproject version $PROJECT_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Check distributions
+        run: twine check --strict dist/*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Only real-release tags upload; `-rc`/`-beta`/etc. stop after the build job.
+    if: ${{ !contains(github.ref, '-') }}
+    environment:
+      name: pypi
+      url: https://pypi.org/p/glyph-audit
+    permissions:
+      id-token: write   # required for trusted publishing
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1

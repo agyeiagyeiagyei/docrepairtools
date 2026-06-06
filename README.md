@@ -4,10 +4,19 @@ Tiered audit of a target font against one or more references — by codepoint, O
 
 ## Install
 
+From PyPI:
+
 ```bash
-pip install -e ".[glyphs]"          # core + Glyphs source support
-pip install -e ".[ai]"              # add Claude / OpenAI / Gemini
-pip install -e ".[all]"             # everything
+pip install glyph-audit               # core (CLI only)
+pip install "glyph-audit[glyphs]"     # + Glyphs source support
+pip install "glyph-audit[ai]"         # + Claude / OpenAI / Gemini AI summaries
+pip install "glyph-audit[all]"        # everything
+```
+
+Or from a checkout (editable):
+
+```bash
+pip install -e ".[glyphs]"
 ```
 
 The `glyph-audit` console command is now on your `$PATH` (equivalent to `python -m GlyphAudit`).

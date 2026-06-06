@@ -38,6 +38,7 @@ directory to sys.path; otherwise install the package once via:
     /Applications/Glyphs\\ 3.app/Contents/Frameworks/Python.framework/Versions/Current/bin/pip3 install glyph-audit
 """
 
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -65,6 +66,7 @@ except ImportError:
         tomllib = None  # type: ignore
 
 import vanilla
+from AppKit import NSFontManager, NSOpenPanel
 from GlyphsApp import Glyphs, UPDATEINTERFACE
 
 from GlyphAudit.comparator import TieredComparator
@@ -78,6 +80,28 @@ from GlyphAudit.model import (
 
 
 CONFIG_PATH = Path.home() / ".glyph-audit" / "config.toml"
+
+CONFIG_TEMPLATE = """\
+# GlyphAudit config — opened by the Width Audit Panel's "Edit config…" button.
+#
+# Each [instances.NAME] entry maps a Glyphs master name (case-insensitive)
+# to a reference font. The panel picks the entry matching the current
+# master by default; you can override it from the Reference dropdown.
+#
+# Reference forms — any of these work as `ref`:
+#   - Static TTF / OTF on disk
+#   - Variable font on disk + axis pin (use the CLI form for axis pinning)
+#   - "Family-system" to use a system-installed font directly
+#   - Glyphs source file (.glyphspackage / .glyphs)
+#
+# Examples:
+
+# [instances.Regular]
+# ref = "/Users/me/fonts/Reference-Regular.ttf"
+
+# [instances.Bold]
+# ref = "/Users/me/fonts/Reference-Bold.ttf"
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +191,58 @@ def _filter_for(target_view: FontView, key: str):
 
 
 # ---------------------------------------------------------------------------
+# Reference picker sources: config / system / file
+# ---------------------------------------------------------------------------
+
+def _system_font_families() -> list[str]:
+    """Every installed font family the OS exposes via NSFontManager.
+    Returns alphabetically sorted list; empty if AppKit isn't available
+    (Glyphs's Python env always has it, so this is just paranoia)."""
+    try:
+        return sorted(NSFontManager.sharedFontManager().availableFontFamilies())
+    except Exception:
+        return []
+
+
+def _pick_font_file() -> str | None:
+    """Open an NSOpenPanel for the user to choose a reference TTF / OTF.
+    Returns the absolute path or None if the dialog was cancelled."""
+    panel = NSOpenPanel.openPanel()
+    panel.setCanChooseFiles_(True)
+    panel.setCanChooseDirectories_(False)
+    panel.setAllowsMultipleSelection_(False)
+    panel.setAllowedFileTypes_(["ttf", "otf", "ttc", "TTF", "OTF", "TTC"])
+    panel.setTitle_("Choose reference font")
+    panel.setPrompt_("Use")
+    if panel.runModal() != 1:  # 1 == NSModalResponseOK
+        return None
+    urls = panel.URLs()
+    if not urls:
+        return None
+    return str(urls[0].path())
+
+
+def _open_config_in_editor() -> None:
+    """Open ~/.glyph-audit/config.toml in the user's default editor.
+    Creates the directory + a starter template if the file doesn't exist."""
+    if not CONFIG_PATH.exists():
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text(CONFIG_TEMPLATE, encoding="utf-8")
+    try:
+        subprocess.run(["open", str(CONFIG_PATH)], check=False)
+    except Exception:
+        traceback.print_exc()
+
+
+# Option-list spec used by the Reference dropdown:
+#   ("config",      master_name_lc)   — entry from [instances.*]
+#   ("system",      family_name)      — macOS-installed font
+#   ("file",        absolute_path)    — last-picked file (sticky for session)
+#   ("file_picker", None)             — sentinel that opens the file dialog
+#   ("sep",         label)            — visual separator row (selectable but ignored)
+
+
+# ---------------------------------------------------------------------------
 # Panel
 # ---------------------------------------------------------------------------
 
@@ -186,19 +262,27 @@ class WidthAuditPanel:
 
     def __init__(self) -> None:
         self.font = Glyphs.font
-        self.references = _load_references()
         self._live_subscribed = False
+        # Reference-picker state. The dropdown is built from a parallel array
+        # of (kind, identifier) tuples in `self._option_specs` — see
+        # `_rebuild_reference_menu` for the full grammar. `_user_picked`
+        # tracks whether the user has manually overridden the default
+        # config-match-by-master selection.
+        self._option_specs: list[tuple[str, object]] = []
+        self._user_picked_index: int | None = None
+        self._sticky_file_ref: str | None = None
 
         master_names = [m.name for m in self.font.masters]
         self.w = vanilla.FloatingWindow(
-            (480, 560),
+            (520, 600),
             "Width Audit",
             autosaveName="GlyphAuditWidthPanel",
-            minSize=(380, 240),
+            minSize=(420, 280),
         )
 
+        # ----- Row 1: master / filter / live / refresh -----
         self.w.masterMenu = vanilla.PopUpButton(
-            (10, 12, 110, 22), master_names, callback=self._refresh_cb
+            (10, 12, 110, 22), master_names, callback=self._master_changed_cb,
         )
         self.w.filterMenu = vanilla.PopUpButton(
             (130, 12, 110, 22),
@@ -209,10 +293,22 @@ class WidthAuditPanel:
             (250, 12, 60, 22), "Live", value=True, callback=self._live_cb,
         )
         self.w.refreshBtn = vanilla.Button(
-            (-90, 10, 80, 22), "Refresh", callback=self._refresh_cb
+            (-90, 10, 80, 22), "Refresh", callback=self._refresh_cb,
         )
 
-        self.w.summary = vanilla.TextBox((10, 44, -10, 18), "")
+        # ----- Row 2: reference picker + edit-config -----
+        self.w.refLabel = vanilla.TextBox(
+            (10, 46, 70, 18), "Reference:", sizeStyle="small",
+        )
+        self.w.refMenu = vanilla.PopUpButton(
+            (80, 42, -110, 22), [], callback=self._reference_picked_cb,
+        )
+        self.w.editConfigBtn = vanilla.Button(
+            (-100, 40, 90, 22), "Edit config…",
+            callback=lambda sender: self._edit_config_cb(),
+        )
+
+        self.w.summary = vanilla.TextBox((10, 76, -10, 18), "", sizeStyle="small")
 
         cols = [
             dict(title="Glyph", key="name", width=160, editable=False),
@@ -223,7 +319,7 @@ class WidthAuditPanel:
             dict(title="Color", key="color", width=70, editable=False),
         ]
         self.w.list = vanilla.List(
-            (10, 70, -10, -10),
+            (10, 102, -10, -10),
             [],
             columnDescriptions=cols,
             doubleClickCallback=self._open_glyph_cb,
@@ -232,6 +328,7 @@ class WidthAuditPanel:
         )
 
         self.w.bind("close", self._on_close)
+        self._rebuild_reference_menu(select_master_default=True)
         self._subscribe_live()
         self._refresh()
         self.w.open()
@@ -278,6 +375,136 @@ class WidthAuditPanel:
         except Exception:
             traceback.print_exc()
 
+    # ----- reference picker -----------------------------------------------
+
+    def _rebuild_reference_menu(self, *, select_master_default: bool) -> None:
+        """Rebuild the Reference dropdown from current config + system fonts.
+        Called on init and whenever the user clicks Edit config… so newly
+        added [instances.*] entries appear immediately."""
+        items: list[str] = []
+        specs: list[tuple[str, object]] = []
+
+        config_refs = _load_references()
+        if config_refs:
+            for master_lc, ref_path in config_refs.items():
+                short = Path(ref_path).name if "/" in ref_path else ref_path
+                items.append(f"Config · {master_lc} → {short}")
+                specs.append(("config", master_lc))
+            items.append("──────────")
+            specs.append(("sep", None))
+
+        # Picker action first so users don't have to scroll past the system
+        # font list to find it.
+        items.append("Choose file…")
+        specs.append(("file_picker", None))
+        if self._sticky_file_ref:
+            items.append(f"File · {Path(self._sticky_file_ref).name}")
+            specs.append(("file", self._sticky_file_ref))
+        items.append("──────────")
+        specs.append(("sep", None))
+
+        for family in _system_font_families():
+            items.append(f"System · {family}")
+            specs.append(("system", family))
+
+        self._option_specs = specs
+        self.w.refMenu.setItems(items)
+
+        if select_master_default:
+            self._select_default_for_master()
+
+    def _select_default_for_master(self) -> None:
+        """Pick the config entry that matches the current master if any;
+        otherwise leave whatever the user last selected, or pick the file
+        picker as the fallback if nothing has been chosen yet."""
+        if self.font is None:
+            return
+        master_idx = self.w.masterMenu.get()
+        if master_idx < 0 or master_idx >= len(self.font.masters):
+            return
+        master_lc = self.font.masters[master_idx].name.lower()
+        for i, (kind, ident) in enumerate(self._option_specs):
+            if kind == "config" and ident == master_lc:
+                self.w.refMenu.set(i)
+                self._user_picked_index = None
+                return
+        # No config match. If the user already picked something, keep that.
+        if self._user_picked_index is not None and self._user_picked_index < len(self._option_specs):
+            self.w.refMenu.set(self._user_picked_index)
+            return
+        # Otherwise fall back to the file picker prompt so the user sees
+        # immediately that no reference is wired up.
+        for i, (kind, _) in enumerate(self._option_specs):
+            if kind == "file_picker":
+                self.w.refMenu.set(i)
+                return
+
+    def _reference_picked_cb(self, sender) -> None:
+        idx = sender.get()
+        if idx < 0 or idx >= len(self._option_specs):
+            return
+        kind, ident = self._option_specs[idx]
+        if kind == "sep":
+            # Snap back to the previous valid selection.
+            if self._user_picked_index is not None:
+                self.w.refMenu.set(self._user_picked_index)
+            else:
+                self._select_default_for_master()
+            return
+        if kind == "file_picker":
+            path = _pick_font_file()
+            if not path:
+                # User cancelled — revert.
+                if self._user_picked_index is not None:
+                    self.w.refMenu.set(self._user_picked_index)
+                else:
+                    self._select_default_for_master()
+                return
+            self._sticky_file_ref = path
+            self._rebuild_reference_menu(select_master_default=False)
+            for i, (k, ide) in enumerate(self._option_specs):
+                if k == "file" and ide == path:
+                    self.w.refMenu.set(i)
+                    self._user_picked_index = i
+                    break
+            self._refresh()
+            return
+        # Plain config / system / file pick — record the override so master
+        # changes don't yank the user back to the config default unless they
+        # actually want that.
+        self._user_picked_index = idx
+        self._refresh()
+
+    def _edit_config_cb(self) -> None:
+        _open_config_in_editor()
+        # User will edit + save in their editor; rebuilding the menu on the
+        # next refresh tick picks up additions automatically.
+        self._rebuild_reference_menu(select_master_default=True)
+        self._refresh()
+
+    def _master_changed_cb(self, sender) -> None:
+        # On master switch, default to whichever config entry matches the new
+        # master. The user can still override via the Reference dropdown.
+        self._select_default_for_master()
+        self._refresh()
+
+    def _resolve_reference_spec(self) -> tuple[str | None, str | None]:
+        """Return (load_font_spec, human_label) for the currently-selected ref.
+        load_font_spec is None when no usable reference is wired up.
+        """
+        idx = self.w.refMenu.get()
+        if idx < 0 or idx >= len(self._option_specs):
+            return None, None
+        kind, ident = self._option_specs[idx]
+        if kind == "config":
+            ref = _load_references().get(ident)
+            return ref, f"config · {ident}"
+        if kind == "system":
+            return f"{ident}-system", f"system · {ident}"
+        if kind == "file":
+            return ident, f"file · {Path(ident).name}"
+        return None, None  # sep / file_picker shouldn't get here
+
     # ----- refresh --------------------------------------------------------
 
     def _refresh_cb(self, sender) -> None:
@@ -297,19 +524,19 @@ class WidthAuditPanel:
             self.w.masterMenu.set(0)
         master = self.font.masters[master_idx]
 
-        ref_path = self.references.get(master.name.lower())
-        if not ref_path:
+        ref_spec, ref_label = self._resolve_reference_spec()
+        if not ref_spec:
             self.w.summary.set(
-                f"No [instances.{master.name}] in {CONFIG_PATH}. "
-                f"Add `ref = \"path/to/reference.ttf\"` and click Refresh."
+                "No reference selected. Pick a system font, "
+                "choose a file, or click Edit config… to add an [instances.*] entry."
             )
             self.w.list.set([])
             return
 
         try:
-            ref_view = _load_reference(ref_path)
+            ref_view = _load_reference(ref_spec)
         except Exception as e:
-            self.w.summary.set(f"Reference load failed: {e}")
+            self.w.summary.set(f"Reference load failed ({ref_label}): {e}")
             self.w.list.set([])
             return
 
@@ -345,7 +572,7 @@ class WidthAuditPanel:
             f"{len(rows)} mismatch{'es' if len(rows) != 1 else ''}  ·  "
             f"T1 {counts['tier1']['mismatch']}/{counts['tier1']['match'] + counts['tier1']['mismatch']}, "
             f"T2 {counts['tier2']['mismatch']}/{counts['tier2']['match'] + counts['tier2']['mismatch']}  ·  "
-            f"filter={filter_label or 'all'}  ·  master={master.name}"
+            f"filter={filter_label or 'all'}  ·  master={master.name}  ·  ref={ref_label}"
         )
         self.w.list.set(rows)
 

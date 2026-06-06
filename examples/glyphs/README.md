@@ -25,10 +25,15 @@ Then in Glyphs, hold **Option** and click the **Script** menu → **Reload
 Scripts** (or just relaunch Glyphs). The panel now appears under
 **Script → Width Audit Panel**.
 
-### Configure
+### Picking a reference
 
-The script reuses your existing GlyphAudit config at
-`~/.glyph-audit/config.toml`. Add an `[instances.NAME]` entry per master:
+Three sources, mixed into a single **Reference** dropdown at the top of the panel:
+
+1. **Config** — every `[instances.*]` entry from `~/.glyph-audit/config.toml`. When you switch masters the dropdown auto-selects the matching entry, so the workflow is the same as the CLI's `--from-config`.
+2. **System** — every font family the OS reports via `NSFontManager`. Pick e.g. *System · Helvetica* to compare against the macOS-installed copy.
+3. **File** — *Choose file…* opens an Open dialog scoped to TTF/OTF/TTC; the picked file stays available as *File · …* for the rest of the session.
+
+Right of the dropdown, **Edit config…** opens `~/.glyph-audit/config.toml` in your default editor (creating it from a starter template if it doesn't exist). Save in the editor, and the next refresh picks up the new entries — the dropdown rebuilds automatically.
 
 ```toml
 [instances.Regular]
@@ -38,9 +43,7 @@ ref = "/path/to/Reference-Regular.ttf"
 ref = "/path/to/Reference-Bold.ttf"
 ```
 
-Master names match case-insensitively. Variable fonts, system fonts, and
-Glyphs sources all work as `ref` values — same syntax as the CLI's
-`--pair` flag. Full schema → [../../docs/configuration.md](../../docs/configuration.md).
+Master names match case-insensitively. Variable fonts, system fonts, and Glyphs sources all work as `ref` values — same syntax as the CLI's `--pair` flag. Full schema → [../../docs/configuration.md](../../docs/configuration.md).
 
 ### Use
 
@@ -50,11 +53,12 @@ Glyphs sources all work as `ref` values — same syntax as the CLI's
 | **Filter menu** | `yellow` / `ready` / `all`. Same semantics as `glyph-audit --filter`. |
 | **Live** | When ticked, the list refreshes on every Glyphs `UPDATEINTERFACE` notification — i.e. as you edit widths or change a glyph's colour. Untick to freeze the view while you investigate a row. |
 | **Refresh** | Manual re-run. |
+| **Reference menu** | Config entry / installed system font / picked file. See *Picking a reference* above. |
+| **Edit config…** | Opens `~/.glyph-audit/config.toml` in the default editor; rebuilds the menu on return. |
 | **List** | Glyph name, tier (T1 codepoint / T2 variant), target advance, reference advance, Δ, and the glyph's Glyphs colour label. Sorted by `|Δ|` descending. |
-| Double-click a row | Opens that glyph in a new Glyphs tab. |
+| Double-click a row | Switches the document to the row's master and opens the glyph in a new Glyphs tab. |
 
-Running **Script → Width Audit Panel** again closes the open panel — the
-script is a toggle.
+Running **Script → Width Audit Panel** again closes the open panel — the script is a toggle.
 
 ### Python dependencies
 
