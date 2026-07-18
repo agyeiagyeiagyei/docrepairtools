@@ -126,6 +126,26 @@ def _load_ttf(path: str, label: Optional[str] = None,
     cmap = dict(font.getBestCmap())  # cp -> glyphname
     hmtx = font["hmtx"]
     advances = {name: hmtx[name][0] for name in font.getGlyphOrder()}
+    # LSB comes free from hmtx (second element of each entry). RSB has to
+    # be derived: RSB = advance - LSB - (xMax - xMin). Empty glyphs
+    # (space, zero-contour marks) get bbox=0 and land at RSB = advance - LSB.
+    lsbs: dict[str, int] = {name: hmtx[name][1] for name in font.getGlyphOrder()}
+    rsbs: dict[str, int] = {}
+    glyf_table = font["glyf"] if "glyf" in font else None
+    for name in font.getGlyphOrder():
+        adv, lsb = hmtx[name]
+        width = 0
+        if glyf_table is not None:
+            try:
+                g = glyf_table[name]
+                if g.numberOfContours != 0:
+                    coords = g.getCoordinates(glyf_table)[0]
+                    if len(coords):
+                        xs = [c[0] for c in coords]
+                        width = max(xs) - min(xs)
+            except (AttributeError, KeyError):
+                pass
+        rsbs[name] = adv - lsb - width
 
     name_to_cp: dict[str, int] = {}
     for cp, name in cmap.items():
@@ -155,6 +175,8 @@ def _load_ttf(path: str, label: Optional[str] = None,
         upm=upm,
         cmap=cmap,
         advances=advances,
+        left_sidebearings=lsbs,
+        right_sidebearings=rsbs,
         gsub_variants=gsub_variants,
         all_glyph_names=set(font.getGlyphOrder()),
     )

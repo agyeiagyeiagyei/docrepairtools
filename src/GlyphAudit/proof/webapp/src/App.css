@@ -122,11 +122,24 @@
   min-height: 200px;
 }
 
-/* Missing glyph indicator — only on the left (proof) panel */
+/* Missing glyph indicator — only on the left (proof) panel. Red wavy
+ * underline signals "there's no glyph here" — a structural absence, not
+ * a metric divergence. Kept on the proof side only; marking the reference
+ * would imply the reference is at fault, which it isn't. */
 .panel:first-child .missing-glyph {
   text-decoration: underline wavy #dc2626;
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
+}
+
+/* Advance-width mismatch — only on the left (proof) panel. Amber text
+ * colour signals "the ink is here but its advance diverges from the
+ * paired reference by more than 1 unit". Colour instead of underline so
+ * the text sits cleanly next to the reference at the same baseline;
+ * hover tooltip carries the exact delta. Toned so it stays readable
+ * against light backgrounds in both light and dark UI themes. */
+.panel:first-child .width-mismatch {
+  color: #c26a2d;
 }
 
 /* Feature menu */

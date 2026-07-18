@@ -20,13 +20,17 @@ GLYPHS_COLOR_NAMES: dict[int, str] = {
     11: "gray",
 }
 
-# Filter spec name → set of colour indices that pass.
-COLOR_FILTERS: dict[str, set[int]] = {
-    "yellow":      {3},
-    "light-green": {4},
-    "green":       {5},
-    "ready":       {3, 4},  # yellow OR light-green
+# Filter spec name → set of colour indices that pass. One entry per palette
+# colour (derived from GLYPHS_COLOR_NAMES so the two can't drift), plus:
+#   ready     — yellow OR light-green, the project convention for
+#               "flagged for proofing"
+#   no-colour — glyphs with no colour label at all (colors dict has no
+#               entry, so the lookup yields None)
+COLOR_FILTERS: dict[str, set] = {
+    name: {idx} for idx, name in GLYPHS_COLOR_NAMES.items()
 }
+COLOR_FILTERS["ready"] = {3, 4}       # yellow OR light-green
+COLOR_FILTERS["no-colour"] = {None}
 
 
 # Suffixes used in target glyph names that map to OpenType feature tags.
@@ -89,6 +93,15 @@ class FontView:
     advances: dict[str, int] = field(default_factory=dict)
     """glyph name -> advance width in font units. May be missing for
     unencoded glyphs that the loader couldn't measure."""
+
+    left_sidebearings: dict[str, int] = field(default_factory=dict)
+    """glyph name -> LSB in font units. Empty for loaders that don't
+    supply bearings (older Glyphs-source loaders, some system-font paths).
+    The width-audit UI hides the LSB/RSB columns when this is empty on
+    either side."""
+
+    right_sidebearings: dict[str, int] = field(default_factory=dict)
+    """glyph name -> RSB in font units. Same caveats as `left_sidebearings`."""
 
     gsub_variants: dict[tuple[int, str], str] = field(default_factory=dict)
     """(source_codepoint, feature_tag) -> variant glyph name. Built either

@@ -3,9 +3,12 @@ requires      = ["setuptools>=65", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name            = "glyph-audit"
+# Distribution name is `docrepair-glyph-audit` on PyPI; the CLI entry
+# point (`glyph-audit`) and top-level Python module (`GlyphAudit`) are
+# kept short so existing code, scripts, and docs don't need renaming.
+name            = "docrepair-glyph-audit"
 version         = "0.1.0"
-description     = "Tiered coverage and width comparison between a target font and one or more reference fonts."
+description     = "DocRepair tools: tiered coverage/width audit + live proofing pipeline for building metrics-compatible fonts (Google Fonts docrepair project)."
 readme          = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
 license         = { file = "LICENSE" }
@@ -42,8 +45,14 @@ claude = ["anthropic>=0.30"]
 openai = ["openai>=1.0"]
 gemini = ["google-generativeai>=0.5"]
 ai     = ["anthropic>=0.30", "openai>=1.0", "google-generativeai>=0.5"]
+# `proof` bundles the extras `glyph-audit proof …` subcommands need to run
+# the full pipeline: `fontc` for compilation, `watchdog` for --watch, and
+# `glyphsLib` so the source-side FontView is available to the panel.
+proof  = ["fontc>=0.1", "watchdog>=3.0", "glyphsLib>=6.0"]
 all    = [
     "glyphsLib>=6.0",
+    "watchdog>=3.0",
+    "fontc>=0.1",
     "anthropic>=0.30",
     "openai>=1.0",
     "google-generativeai>=0.5",
@@ -65,10 +74,28 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where   = ["src"]
 include = ["GlyphAudit*"]
+# Explicit exclude: without it setuptools's package-discovery walks INTO
+# webapp/node_modules and picks up any stray .py file (e.g.
+# node_modules/flatted/python/flatted.py) as a sub-sub-package. Cost is
+# a few KB of bloat in the wheel + a random import path a user could
+# stumble into. `webapp` itself is included via the package_data glob
+# below; only its dependency dumping ground is excluded.
+exclude = ["GlyphAudit.proof.webapp.node_modules*",
+           "GlyphAudit.proof.webapp.src*"]
 
 [tool.setuptools.package-data]
 GlyphAudit = [
     "prompts/*.md",
     "examples/*.example",
     "examples/*.toml",
+]
+# The prebuilt Vite bundle for `glyph-audit proof serve`. `dist/` is produced
+# by `cd src/GlyphAudit/proof/webapp && npm run build` before packaging;
+# release scripts must call it or the wheel ships without a UI. The `src/`
+# subdirectory is deliberately NOT shipped — end users install and run the
+# prebuilt bundle; hackers work from a source checkout instead.
+"GlyphAudit.proof.webapp" = [
+    "dist/index.html",
+    "dist/assets/*",
+    "dist/assets/**/*",
 ]

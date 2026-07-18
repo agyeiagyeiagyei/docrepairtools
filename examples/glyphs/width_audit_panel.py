@@ -38,6 +38,7 @@ directory to sys.path; otherwise install the package once via:
     /Applications/Glyphs\\ 3.app/Contents/Frameworks/Python.framework/Versions/Current/bin/pip3 install glyph-audit
 """
 
+import json
 import subprocess
 import sys
 import traceback
@@ -66,7 +67,8 @@ except ImportError:
         tomllib = None  # type: ignore
 
 import vanilla
-from AppKit import NSFontManager, NSOpenPanel
+from vanilla.dialogs import getFile
+from AppKit import NSFontManager
 from GlyphsApp import Glyphs, UPDATEINTERFACE
 
 from GlyphAudit.comparator import TieredComparator
@@ -80,6 +82,8 @@ from GlyphAudit.model import (
 
 
 CONFIG_PATH = Path.home() / ".glyph-audit" / "config.toml"
+STATE_PATH  = Path.home() / ".glyph-audit" / "width-panel-state.json"
+MAX_RECENT_FILES = 8
 
 CONFIG_TEMPLATE = """\
 # GlyphAudit config — opened by the Width Audit Panel's "Edit config…" button.
@@ -107,6 +111,46 @@ CONFIG_TEMPLATE = """\
 # ---------------------------------------------------------------------------
 # Config → references map
 # ---------------------------------------------------------------------------
+
+def _load_panel_state() -> dict:
+    """Load the panel's small JSON state (currently just the recent-files
+    list). Tolerates missing / malformed file by returning {}."""
+    if not STATE_PATH.exists():
+        return {}
+    try:
+        return json.loads(STATE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_panel_state(state: dict) -> None:
+    """Persist `state` to ~/.glyph-audit/width-panel-state.json."""
+    try:
+        STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        STATE_PATH.write_text(json.dumps(state, indent=2))
+    except Exception:
+        traceback.print_exc()
+
+
+def _load_recent_files() -> list[str]:
+    """Recent references the user has picked via `Choose file…`, most recent
+    first. Stale paths (deleted files) are filtered out."""
+    state = _load_panel_state()
+    files = state.get("recent_files") or []
+    return [p for p in files if isinstance(p, str) and Path(p).is_file()]
+
+
+def _push_recent_file(path: str) -> list[str]:
+    """Move `path` to the front of the recent list, dedupe, cap, persist.
+    Returns the resulting list."""
+    state = _load_panel_state()
+    files = [p for p in (state.get("recent_files") or []) if isinstance(p, str) and p != path]
+    files.insert(0, path)
+    files = files[:MAX_RECENT_FILES]
+    state["recent_files"] = files
+    _save_panel_state(state)
+    return files
+
 
 def _load_references() -> dict[str, str]:
     """Return {master_name_lowercased: ref_spec_string} from the user config.
@@ -204,22 +248,41 @@ def _system_font_families() -> list[str]:
         return []
 
 
-def _pick_font_file() -> str | None:
-    """Open an NSOpenPanel for the user to choose a reference TTF / OTF.
-    Returns the absolute path or None if the dialog was cancelled."""
-    panel = NSOpenPanel.openPanel()
-    panel.setCanChooseFiles_(True)
-    panel.setCanChooseDirectories_(False)
-    panel.setAllowsMultipleSelection_(False)
-    panel.setAllowedFileTypes_(["ttf", "otf", "ttc", "TTF", "OTF", "TTC"])
-    panel.setTitle_("Choose reference font")
-    panel.setPrompt_("Use")
-    if panel.runModal() != 1:  # 1 == NSModalResponseOK
-        return None
-    urls = panel.URLs()
-    if not urls:
-        return None
-    return str(urls[0].path())
+def _pick_font_file_async(parent_window, on_picked, on_cancelled=None) -> None:
+    """Open a sheet-modal file picker attached to `parent_window`.
+
+    Async: the chosen path is delivered to `on_picked(path)` on success, or
+    `on_cancelled()` if the user dismissed the sheet. We can't return the
+    result synchronously because vanilla's synchronous `getFile` path uses
+    `NSOpenPanel.runModalForDirectory_file_types_` — Apple deprecated that
+    in 10.6 and it stopped showing any dialog at all on macOS 13+. The
+    sheet-modal form (`beginSheetModalForWindow_completionHandler_`) still
+    works, and vanilla wraps it for us when we pass `parentWindow`.
+    """
+    def _result(paths):
+        # vanilla hands us an NSArray of NSCFString — coerce to a plain
+        # Python list of POSIX strings so downstream `open(...)` /
+        # `load_font(...)` calls don't choke on the wrapper type.
+        if not paths:
+            if on_cancelled:
+                on_cancelled()
+            return
+        # Single-select dialog; first entry is the pick.
+        path = str(paths[0]) if hasattr(paths, "__getitem__") else str(paths)
+        on_picked(path)
+
+    def _cancel():
+        if on_cancelled:
+            on_cancelled()
+
+    getFile(
+        messageText="Choose reference font",
+        fileTypes=("ttf", "otf", "ttc", "TTF", "OTF", "TTC"),
+        allowsMultipleSelection=False,
+        parentWindow=parent_window,
+        resultCallback=_result,
+        cancelCallback=_cancel,
+    )
 
 
 def _open_config_in_editor() -> None:
@@ -267,10 +330,10 @@ class WidthAuditPanel:
         # of (kind, identifier) tuples in `self._option_specs` — see
         # `_rebuild_reference_menu` for the full grammar. `_user_picked`
         # tracks whether the user has manually overridden the default
-        # config-match-by-master selection.
+        # config-match-by-master selection. Picked files persist between
+        # sessions via `width-panel-state.json`.
         self._option_specs: list[tuple[str, object]] = []
         self._user_picked_index: int | None = None
-        self._sticky_file_ref: str | None = None
 
         master_names = [m.name for m in self.font.masters]
         self.w = vanilla.FloatingWindow(
@@ -378,30 +441,32 @@ class WidthAuditPanel:
     # ----- reference picker -----------------------------------------------
 
     def _rebuild_reference_menu(self, *, select_master_default: bool) -> None:
-        """Rebuild the Reference dropdown from current config + system fonts.
-        Called on init and whenever the user clicks Edit config… so newly
-        added [instances.*] entries appear immediately."""
+        """Rebuild the Reference dropdown from current config + recents +
+        system fonts. Called on init and whenever the user clicks
+        Edit config… (so newly added [instances.*] entries appear) or
+        picks a file (so the recent list updates).
+
+        No visual separators — macOS's NSPopUpButton silently converts long
+        dash runs to inert separator rows, which throws off the click→index
+        mapping. Distinct prefixes (Config / Recent / System) keep the
+        groups visually obvious without needing dividers.
+        """
         items: list[str] = []
         specs: list[tuple[str, object]] = []
 
-        config_refs = _load_references()
-        if config_refs:
-            for master_lc, ref_path in config_refs.items():
-                short = Path(ref_path).name if "/" in ref_path else ref_path
-                items.append(f"Config · {master_lc} → {short}")
-                specs.append(("config", master_lc))
-            items.append("──────────")
-            specs.append(("sep", None))
-
-        # Picker action first so users don't have to scroll past the system
-        # font list to find it.
+        # Picker action first — easiest to find, no scrolling needed.
         items.append("Choose file…")
         specs.append(("file_picker", None))
-        if self._sticky_file_ref:
-            items.append(f"File · {Path(self._sticky_file_ref).name}")
-            specs.append(("file", self._sticky_file_ref))
-        items.append("──────────")
-        specs.append(("sep", None))
+
+        for master_lc, ref_path in _load_references().items():
+            short = Path(ref_path).name if "/" in ref_path else ref_path
+            items.append(f"Config · {master_lc} → {short}")
+            specs.append(("config", master_lc))
+
+        recents = _load_recent_files()
+        for path in recents:
+            items.append(f"Recent · {Path(path).name}")
+            specs.append(("file", path))
 
         for family in _system_font_families():
             items.append(f"System · {family}")
@@ -452,27 +517,44 @@ class WidthAuditPanel:
                 self._select_default_for_master()
             return
         if kind == "file_picker":
-            path = _pick_font_file()
-            if not path:
-                # User cancelled — revert.
-                if self._user_picked_index is not None:
-                    self.w.refMenu.set(self._user_picked_index)
-                else:
-                    self._select_default_for_master()
-                return
-            self._sticky_file_ref = path
-            self._rebuild_reference_menu(select_master_default=False)
-            for i, (k, ide) in enumerate(self._option_specs):
-                if k == "file" and ide == path:
-                    self.w.refMenu.set(i)
-                    self._user_picked_index = i
-                    break
-            self._refresh()
+            # File picker is async (sheet-modal). Revert the dropdown to its
+            # previous valid selection right now so the user sees something
+            # consistent while the sheet is open; apply the file when (and
+            # only if) the sheet returns a path.
+            self._restore_previous_selection()
+            try:
+                parent = self.w.getNSWindow()
+            except Exception:
+                parent = None
+            _pick_font_file_async(
+                parent,
+                on_picked=self._apply_picked_file,
+                on_cancelled=None,  # dropdown already reverted; nothing to do
+            )
             return
         # Plain config / system / file pick — record the override so master
         # changes don't yank the user back to the config default unless they
         # actually want that.
         self._user_picked_index = idx
+        self._refresh()
+
+    def _restore_previous_selection(self) -> None:
+        if self._user_picked_index is not None and self._user_picked_index < len(self._option_specs):
+            self.w.refMenu.set(self._user_picked_index)
+        else:
+            self._select_default_for_master()
+
+    def _apply_picked_file(self, path: str) -> None:
+        """Called by the async file picker once the user actually chose a file.
+        Pushes the path to the persisted recents list so it survives panel
+        toggles and Glyphs restarts."""
+        _push_recent_file(path)
+        self._rebuild_reference_menu(select_master_default=False)
+        for i, (k, ide) in enumerate(self._option_specs):
+            if k == "file" and ide == path:
+                self.w.refMenu.set(i)
+                self._user_picked_index = i
+                break
         self._refresh()
 
     def _edit_config_cb(self) -> None:
@@ -536,8 +618,19 @@ class WidthAuditPanel:
         try:
             ref_view = _load_reference(ref_spec)
         except Exception as e:
-            self.w.summary.set(f"Reference load failed ({ref_label}): {e}")
+            # Show a short summary in the panel and a full traceback in the
+            # Macro Window so the user can paste the actual failure into a
+            # bug report. Includes the resolved spec so it's clear *what*
+            # the loader was asked to open.
+            self.w.summary.set(
+                f"Reference load failed ({ref_label}): {type(e).__name__}: {e}"
+            )
             self.w.list.set([])
+            Glyphs.showMacroWindow()
+            print(f"Width Audit Panel — reference load failed")
+            print(f"  spec: {ref_spec!r}")
+            print(f"  label: {ref_label}")
+            traceback.print_exc()
             return
 
         target_view = fontview_from_master(self.font, master)

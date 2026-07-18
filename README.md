@@ -1,16 +1,34 @@
-# GlyphAudit
+# GlyphAudit — DocRepair Tools
 
-Tiered audit of a target font against one or more references — by codepoint, OpenType feature variant, and unencoded internals. Designed for type designers working in Glyphs on metrics-compatible faces who want a fast "does this typeset like the reference?" answer per master.
+Part of the **DocRepair tools** for the Google Fonts docrepair project: building metrics-compatible replacement fonts that can stand in for an original document face without reflowing the documents that used it. The whole toolkit exists to answer one question fast, per glyph, per master: *does this typeset like the reference?*
+
+Tiered audit of a target font against one or more references — by codepoint, OpenType feature variant, and unencoded internals. Designed for type designers working in Glyphs who need to **match-but-not-quite** an original: same advances and coverage, distinct outlines.
+
+Ships two complementary surfaces:
+
+- **`glyph-audit proof serve`** — a browser-based side-by-side proof view that renders your working font next to configured reference families. Watches your source for changes and hot-rebuilds.
+
+  ![Proof web view — Velarium vs Verdana](docs/screenshots/proof-web.png)
+
+- **Glyphs.app Width Audit panel** — a floating table of advance-width mismatches against a chosen reference master. Auto-pairs system font families to the active master's style (Bold master picks Verdana Bold, Italic picks Verdana Italic).
+
+  ![Width Audit panel](docs/screenshots/width-audit-panel.png)
+
+Both are installed by `pip install docrepair-glyph-audit[proof]`; the panel then symlinks via `glyph-audit proof panel install`.
 
 ## Install
 
 From PyPI:
 
 ```bash
-pip install glyph-audit               # core (CLI only)
-pip install "glyph-audit[glyphs]"     # + Glyphs source support
-pip install "glyph-audit[ai]"         # + Claude / OpenAI / Gemini AI summaries
-pip install "glyph-audit[all]"        # everything
+pip install docrepair-glyph-audit               # core (CLI only)
+pip install "docrepair-glyph-audit[glyphs]"     # + Glyphs source support
+pip install "docrepair-glyph-audit[proof]"      # + `glyph-audit proof serve` extras
+pip install "docrepair-glyph-audit[ai]"         # + Claude / OpenAI / Gemini AI summaries
+pip install "docrepair-glyph-audit[all]"        # everything
+
+# Note: the console script + Python module are still `glyph-audit` /
+# `GlyphAudit` — only the PyPI distribution name is namespaced.
 ```
 
 Or from a checkout (editable):

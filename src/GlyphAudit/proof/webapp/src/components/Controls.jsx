@@ -1,23 +1,11 @@
 import FeatureMenu from './FeatureMenu'
 
-// System fonts every macOS / Windows install ships. The build-supplied
-// `referenceFontFamilies` (proper licensed copies with full GSUB features)
-// are merged in at the top of the list so they're the default pick.
-const SYSTEM_FONTS = [
-  'Arial',
-  'Georgia',
-  'Times New Roman',
-  'Courier New',
-  'Trebuchet MS',
-  'Palatino',
-]
-
 const SIZE_PRESETS = [12, 16, 24, 36, 48, 72]
 
 export default function Controls({
   systemFont,
   onSystemFontChange,
-  referenceFontFamilies = [],
+  referenceFonts,
   onBold,
   onItalic,
   bodySize,
@@ -32,10 +20,6 @@ export default function Controls({
   onApplyFeature,
   onClearFeatures,
 }) {
-  const fontOptions = [
-    ...referenceFontFamilies,
-    ...SYSTEM_FONTS.filter((f) => !referenceFontFamilies.includes(f)),
-  ]
   return (
     <div className="controls">
       <label>
@@ -43,12 +27,16 @@ export default function Controls({
         <select
           value={systemFont}
           onChange={(e) => onSystemFontChange(e.target.value)}
+          disabled={!referenceFonts || referenceFonts.length === 0}
         >
-          {fontOptions.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
+          {referenceFonts && referenceFonts.length > 0
+            ? referenceFonts.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))
+            : <option value="">(no references)</option>
+          }
         </select>
       </label>
 

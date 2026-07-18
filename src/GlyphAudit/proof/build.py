@@ -1,43 +1,16 @@
-#!/usr/bin/env python3
-"""
-Build the artifacts the GlyphAudit Preview Vite app reads:
+"""Subset a Glyphs source down to a proof TTF using fontc.
 
-  * proof-font.ttf            – subset font built from --source, only glyphs
-                                marked yellow / light-green in Glyphs (=
-                                ready for proofing) plus essentials.
-  * proof-config.json         – runtime config the React app fetches:
-                                project name, proof font family, list of
-                                reference fonts (copied under public/ref/).
-  * available-chars.json      – codepoints in the proof font (drives the
-                                "missing glyph" underline in the proof panel).
-  * available-features.json   – per-feature compile status (drives the
-                                Features dropdown).
+The heavy-lifting library behind `glyph-audit proof build/serve`. Callers
+pass explicit paths + a color set; nothing here reads config files, spawns
+subprocesses, or knows about a specific font project. See
+`GlyphAudit.proof.config` for the TOML config schema.
 
-All artifacts land in `public/` alongside this script, where Vite serves
-them at the root URL. Run from anywhere; output paths are anchored to
-the script's location, not the caller's CWD.
-
-Examples (executed from a typeface project's root):
-
-    # Minimal: project name comes from the source filename stem,
-    # proof family becomes "<Name> Proof", references read from any
-    # [instances.*] entries in ~/.glyph-audit/config.toml.
-    python /path/to/GlyphAudit/preview/build.py \\
-        --source sources/MyTypeface.glyphspackage
-
-    # Explicit reference fonts (repeatable):
-    python /path/to/GlyphAudit/preview/build.py \\
-        --source sources/MyTypeface.glyphspackage \\
-        --name "MyTypeface" \\
-        --reference Verdana:regular=sources/reference/VERDANA.TTF \\
-        --reference Verdana:bold=sources/reference/VERDANAB.TTF
-
-    # Watch the source and rebuild on every .glyph save:
-    python /path/to/GlyphAudit/preview/build.py \\
-        --source sources/MyTypeface.glyphspackage --watch
+Filters .glyph files by color, transitively includes referenced components
+so fontc doesn't panic on missing dependencies, strips broken features
+(rules whose glyphs got filtered out), compiles with fontc, then applies
+two post-fix passes (see `_apply_postfixes`).
 """
 
-import argparse
 import json
 import os
 import re
@@ -46,28 +19,204 @@ import subprocess
 import sys
 import tempfile
 import time
-from pathlib import Path
 
-# Output anchored to this script's location so the Vite app at preview/ and
-# the build artifacts at preview/public/ always agree, regardless of where
-# the user runs the script from.
-PREVIEW_DIR    = Path(__file__).resolve().parent
-OUTPUT_DIR     = PREVIEW_DIR / "public"
-OUTPUT_PATH    = OUTPUT_DIR / "proof-font.ttf"
-REF_OUTPUT_DIR = OUTPUT_DIR / "ref"
-CONFIG_OUTPUT  = OUTPUT_DIR / "proof-config.json"
-USER_CONFIG    = Path.home() / ".glyph-audit" / "config.toml"
+# Re-export the color palette + default so callers that just want the
+# labels don't have to know about the config submodule.
+from .config import (
+    GLYPHS_COLORS,
+    DEFAULT_PROOF_COLORS,
+    DEFAULT_ESSENTIAL_GLYPHS as ESSENTIAL_GLYPHS,
+    validate_colors,
+    normalize_color,
+)
 
-# Glyphs that must always be included regardless of color
-ESSENTIAL_GLYPHS = {"_notdef", "space"}
 
-# GlyphsApp color indices that qualify for proofing
-# 3 = Yellow (ready for testing), 4 = Light green (passed inspection)
-PROOF_COLORS = {"3", "4"}
+def output_paths_for(source_pkg, basename):
+    """Return (ttf_name, chars_manifest_name, features_manifest_name).
 
-# Human-readable names for OpenType feature tags. Used to label rows in the
-# preview app's Features dropdown. Anything not listed falls back to the tag
-# itself, so unknown / project-specific tags still appear.
+    Italic sources (basename contains 'Italic', case-insensitive) get an
+    `-italic` suffix so roman and italic outputs coexist in the same
+    directory. All three filenames use the same suffix scheme.
+    """
+    is_italic = "italic" in os.path.basename(source_pkg).lower()
+    suffix = "-italic" if is_italic else ""
+    return (
+        f"{basename}{suffix}.ttf",
+        f"available-chars{suffix}.json",
+        f"available-features{suffix}.json",
+    )
+
+
+def write_proof_config(
+    output_dir,
+    family_name,
+    output_basename,
+    sources,
+    references=(),
+    copy_references=True,
+):
+    """Emit `proof-config.json` describing what's on disk for the web app.
+
+    Also copies each reference slot's TTF into `output_dir` when
+    `copy_references=True` so the web app can fetch them from same-origin
+    paths (browsers won't load fonts cross-origin without CORS headers).
+
+    `sources`   — iterable of source .glyphspackage basenames. Used only to
+                  decide which face slots (roman / italic) get written into
+                  the manifest.
+    `references` — iterable of GlyphAudit.proof.config.Reference objects.
+                  Empty when the user hasn't configured any.
+
+    Returns the manifest dict (also written to `<output_dir>/proof-config.json`).
+    """
+    output_dir = os.fspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    faces = {}
+    for src in sources:
+        pkg = os.path.basename(os.fspath(src).rstrip(os.sep))
+        ttf, chars, features = output_paths_for(pkg, output_basename)
+        slot = "italic" if "italic" in pkg.lower() else "roman"
+        # If both a roman and italic source point at the same slot (unlikely
+        # but possible with typos), the last one wins — non-fatal.
+        faces[slot] = {"ttf": f"/{ttf}", "chars": f"/{chars}", "features": f"/{features}"}
+
+    ref_entries = []
+    for ref in references:
+        slot_entries = []
+        for s in ref.slots:
+            src_path = s.path
+            if copy_references and os.path.isfile(src_path):
+                dest_name = os.path.basename(src_path)
+                dest_path = os.path.join(output_dir, dest_name)
+                try:
+                    # Copy only when the source is newer or the dest is
+                    # missing — avoids rewriting the file on every build.
+                    if (not os.path.exists(dest_path)
+                            or os.path.getmtime(src_path) > os.path.getmtime(dest_path)):
+                        shutil.copy2(src_path, dest_path)
+                except OSError as e:
+                    print(f"  Reference copy failed for {src_path}: {e}", file=sys.stderr)
+            else:
+                dest_name = os.path.basename(src_path)
+            entry = {"file": f"/{dest_name}", "weight": s.weight, "style": s.style}
+            if s.slot == "variable":
+                # A variable file legitimately covers 400/700, normal/italic.
+                # Emit the file once with `variable` style; the web app expands
+                # it into four @font-face entries (weight 100-900 × normal +
+                # italic) so the browser can interpolate freely.
+                entry["style"] = "variable"
+            slot_entries.append(entry)
+        ref_entries.append({"name": ref.name, "slots": slot_entries})
+
+    manifest = {
+        "familyName": family_name,
+        "faces": faces,
+        "references": ref_entries,
+    }
+    path = os.path.join(output_dir, "proof-config.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    return manifest
+
+
+def _slugify(name: str) -> str:
+    """Reference-family name → filesystem-safe slug."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def write_width_manifests(output_dir, output_basename, sources, references,
+                          tolerance_units: int = 1):
+    """Emit per-(face, reference) advance-width diff manifests.
+
+    For every proof face (roman + italic) and every reference family that
+    has a matching-style slot, walk the codepoint intersection of the two
+    fonts and record entries where `|proof - reference| > tolerance_units`.
+
+    File names: `widths-<face>-<slug>.json`. Web app fetches on reference-
+    dropdown change and paints matched glyphs with the amber
+    `.width-mismatch` treatment.
+
+    Silent no-op when fontTools isn't importable (unusual — it's a hard
+    dependency of the tool — but keeps the build from crashing if
+    reference paths fail to load).
+    """
+    try:
+        from fontTools.ttLib import TTFont
+    except ImportError:  # pragma: no cover
+        return {}
+
+    output_dir = os.fspath(output_dir)
+
+    def _face_widths(ttf_path):
+        try:
+            f = TTFont(ttf_path)
+            hmtx = f["hmtx"]
+            cmap = f.getBestCmap()
+            widths = {cp: hmtx[name][0] for cp, name in cmap.items() if name in hmtx.metrics}
+            f.close()
+            return widths
+        except Exception as e:
+            print(f"  width-manifest: couldn't read {ttf_path}: {e}", file=sys.stderr)
+            return {}
+
+    # Build a {face_slot: proof_widths} map. Face slot names match the
+    # keys in `proof-config.json`'s `faces` block ('roman' / 'italic').
+    proof_widths_by_face = {}
+    for src in sources:
+        pkg = os.path.basename(os.fspath(src).rstrip(os.sep))
+        ttf_name, _, _ = output_paths_for(pkg, output_basename)
+        ttf_path = os.path.join(output_dir, ttf_name)
+        if not os.path.isfile(ttf_path):
+            continue
+        slot = "italic" if "italic" in pkg.lower() else "roman"
+        proof_widths_by_face[slot] = _face_widths(ttf_path)
+
+    # Pick the reference slot to pair against each proof face. Prefer an
+    # exact style match, fall back to `regular` for both when nothing else
+    # is available (matches Verdana's behaviour when only one style ships).
+    def _pick_slot(ref, face_slot):
+        style_target = "italic" if face_slot == "italic" else "normal"
+        for s in ref.slots:
+            if s.style == style_target and s.slot in ("regular", "italic"):
+                return s
+        for s in ref.slots:
+            if s.slot == "regular":
+                return s
+        return ref.slots[0] if ref.slots else None
+
+    written = {}
+    for ref in references:
+        slug = _slugify(ref.name)
+        for face_slot, proof_widths in proof_widths_by_face.items():
+            picked = _pick_slot(ref, face_slot)
+            if picked is None or not os.path.isfile(picked.path):
+                continue
+            ref_widths = _face_widths(picked.path)
+            entries = []
+            for cp, pw in proof_widths.items():
+                rw = ref_widths.get(cp)
+                if rw is None:
+                    continue
+                delta = pw - rw
+                if abs(delta) > tolerance_units:
+                    entries.append({
+                        "cp": cp,
+                        "proof": pw,
+                        "ref": rw,
+                        "delta": delta,
+                    })
+            entries.sort(key=lambda e: -abs(e["delta"]))
+            fname = f"widths-{face_slot}-{slug}.json"
+            path = os.path.join(output_dir, fname)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(entries, f)
+            written[(face_slot, ref.name)] = fname
+    return written
+
+# Human-readable names for the OT feature tags this source uses.
+# (Only those that actually appear in Velarium's source are listed; unknown tags
+# fall back to the tag itself.)
 FEATURE_NAMES = {
     "aalt": "Access All Alternates",
     "calt": "Contextual Alternates",
@@ -257,6 +406,36 @@ def _extract_glyph_refs(code, class_members, source_glyphs):
 _SUB_LINE_RE = re.compile(r"^\s*sub\s+(.+?)\s+by\s+(.+?)\s*;\s*$")
 
 
+def _flatten_fea_tokens(s):
+    """Split an FEA side (LHS or RHS of `sub … by …`) into glyph-name tokens.
+
+    Bracket lists `[a b c]` yield each contained token; context apostrophes
+    `x'` are stripped. Class refs (`@foo`) are returned literally so the caller
+    can decide whether to bail. Returns [] if the string can't be parsed.
+    """
+    tokens = []
+    i, n = 0, len(s)
+    while i < n:
+        c = s[i]
+        if c.isspace():
+            i += 1
+            continue
+        if c == "[":
+            end = s.find("]", i)
+            if end < 0:
+                return []
+            for t in s[i + 1:end].split():
+                tokens.append(t.rstrip("'"))
+            i = end + 1
+        else:
+            j = i
+            while j < n and not s[j].isspace() and s[j] != "[":
+                j += 1
+            tokens.append(s[i:j].rstrip("'"))
+            i = j
+    return tokens
+
+
 def _filter_feature_rules(code, keep_glyphs):
     """Strip per-rule substitution lines whose inputs aren't in the proof subset.
 
@@ -289,9 +468,11 @@ def _filter_feature_rules(code, keep_glyphs):
         if not s.startswith("sub"):
             out_lines.append(raw)
             continue
-        # Rules using class references or bracket lists are kept as-is — we'd
-        # need a real FEA parser to safely rewrite them.
-        if "@" in s or "[" in s:
+        # `@class` refs need a real FEA parser to safely rewrite (member lists
+        # can change under filtering) — leave those rules untouched and flag the
+        # feature as complex. Bracket lists `[a b c]`, however, are just
+        # syntactic sugar for enumerated alternates: we can walk them.
+        if "@" in s:
             complex_seen = True
             out_lines.append(raw)
             continue
@@ -299,14 +480,17 @@ def _filter_feature_rules(code, keep_glyphs):
         if not m:
             out_lines.append(raw)
             continue
-        lhs_tokens = m.group(1).split()
-        rhs_tokens = m.group(2).split()
-        # Strip context apostrophes (e.g. `sub a' b by c.alt;`) for membership tests.
-        inputs = [t.rstrip("'") for t in lhs_tokens]
+        inputs = _flatten_fea_tokens(m.group(1))
+        outputs = _flatten_fea_tokens(m.group(2))
+        if not inputs or not outputs:
+            # Parse failure — keep the rule untouched, flag complex.
+            complex_seen = True
+            out_lines.append(raw)
+            continue
         if not all(g in keep_glyphs for g in inputs):
             # Rule references an input glyph that isn't in the proof — drop silently.
             continue
-        outputs_missing = [g for g in rhs_tokens if g not in keep_glyphs]
+        outputs_missing = [g for g in outputs if g not in keep_glyphs]
         if outputs_missing:
             missing.update(outputs_missing)
             continue
@@ -364,9 +548,24 @@ def _build_feature_inventory(fontinfo_text, source_glyphs, keep_glyphs):
         has_external_lookup = bool(
             re.search(r"^\s*lookup\s+[A-Za-z_][\w]*\s*;", code_no_comments, re.MULTILINE)
         )
+        # Count `sub` rules that survived filtering. Early because we also
+        # use this to decide "did filtering leave anything worth compiling?"
+        active_sub_count = sum(
+            1 for line in (filtered_code or "").splitlines()
+            if line.strip().startswith("sub ")
+        )
+        # If every rule got filtered out, what's left is a scaffold of empty
+        # `lookup FOO { } FOO;` blocks — a fea-syntax error that would kill
+        # the whole compile. Demote to "missing-glyphs" so the feature is
+        # dropped rather than passed through empty.
+        code_had_subs = any(
+            line.strip().startswith("sub ") for line in code.splitlines()
+        )
         if disabled:
             status = "disabled"
         elif missing:
+            status = "missing-glyphs"
+        elif code_had_subs and active_sub_count == 0:
             status = "missing-glyphs"
         elif has_class_ref or has_external_lookup:
             status = "needs-environment"
@@ -378,10 +577,7 @@ def _build_feature_inventory(fontinfo_text, source_glyphs, keep_glyphs):
         # Multiple feature entries can share a tag (one per script/language pair);
         # collapse into one inventory row per tag, downgrading status pessimistically.
         existing = next((x for x in inventory if x["tag"] == tag), None)
-        active_ref_count = sum(
-            1 for line in (filtered_code or "").splitlines()
-            if line.strip().startswith("sub ")
-        )
+        active_ref_count = active_sub_count
         if existing is None:
             inventory.append({
                 "tag": tag,
@@ -567,31 +763,55 @@ def _parse_glyph(filepath):
     return glyphname, color, unicode_val
 
 
-def build_font(source_path, *, name=None, proof_family=None, references=None, defaults=None):
-    """Build the proof font + all preview manifests. Returns True on success.
+def build_font(
+    source_path,
+    output_dir,
+    output_basename,
+    proof_colors=None,
+    essential_glyphs=None,
+):
+    """Build a subset variable font from a Glyphs source. Returns True on success.
 
     Args:
-      source_path: absolute path to the typeface .glyphspackage / .glyphs source.
-      name: project name (defaults to source filename stem). Used as the default
-            headline string and to derive the proof font family.
-      proof_family: font-family name for the proof font (defaults to "<name> Proof").
-      references: list of dicts, each like
-            {"family": "Verdana", "files": {"regular": "/abs/path.ttf", ...}}
-            Style keys: "regular" | "bold" | "italic" | "boldItalic".
-      defaults: optional {"headline": str, "body": str} overrides for the
-                React app's initial editable contents.
+        source_path:     absolute path to the `.glyphspackage` (or `.glyphs`).
+        output_dir:      absolute path to the directory where the TTF and JSON
+                         manifests should be written. Created if missing.
+        output_basename: basename for outputs (e.g. `Merriweather-proof`);
+                         italic sources get an `-italic` suffix appended.
+        proof_colors:    iterable of GLYPHS_COLORS keys to include; defaults
+                         to yellow + light green.
+        essential_glyphs: names that survive the color filter unconditionally
+                         (e.g. `_notdef`, `space`).
+
+    On success the following files land under `output_dir`:
+        <basename>[-italic].ttf
+        available-chars[-italic].json
+        available-features[-italic].json
     """
+    if proof_colors is None:
+        proof_colors = DEFAULT_PROOF_COLORS
+    proof_colors = frozenset(proof_colors)
+    if essential_glyphs is None:
+        essential_glyphs = ESSENTIAL_GLYPHS
+    essential_glyphs = frozenset(essential_glyphs)
+
+    source_path = os.fspath(source_path)
+    output_dir = os.fspath(output_dir)
+    pkg_name = os.path.basename(source_path.rstrip(os.sep))
+    ttf_name, chars_name, features_name = output_paths_for(pkg_name, output_basename)
+    output_path = os.path.join(output_dir, ttf_name)
+
     if not os.path.isdir(source_path):
         print(f"Error: source not found: {source_path}", file=sys.stderr)
         return False
 
-    pkg_name = os.path.basename(os.path.normpath(source_path))
-    project_name = name or os.path.splitext(pkg_name)[0]
-    proof_family = proof_family or f"{project_name} Proof"
-    output_path = str(OUTPUT_PATH)
-    references = references or []
+    # Display path — relative to CWD when possible, so build logs stay short.
+    try:
+        output_rel = os.path.relpath(output_path)
+    except ValueError:
+        output_rel = output_path
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     tmp_dir = tempfile.mkdtemp(prefix=".proof-build-")
     try:
@@ -614,9 +834,10 @@ def build_font(source_path, *, name=None, proof_family=None, references=None, de
                     f.write(text)
 
         # 3. Scan glyphs and decide which to keep
-        keep = set(ESSENTIAL_GLYPHS)
+        keep = set(essential_glyphs)
         all_glyphs = set()
         available_codepoints = set()
+        components_by_glyph = {}  # glyphname -> set of ref'd component names
 
         for fname in os.listdir(glyphs_dir):
             if not fname.endswith(".glyph"):
@@ -626,10 +847,40 @@ def build_font(source_path, *, name=None, proof_family=None, references=None, de
             if glyphname is None:
                 continue
             all_glyphs.add((glyphname, fname))
-            if color in PROOF_COLORS or glyphname in ESSENTIAL_GLYPHS:
+            # Also index component references so we can transitively pull them in.
+            with open(fpath, "r", encoding="utf-8") as f:
+                text = f.read()
+            components_by_glyph[glyphname] = set(re.findall(r"^\s*ref\s*=\s*([^;\s]+)\s*;", text, re.MULTILINE))
+            # Uncolored glyphs match the sentinel "none". Otherwise the
+            # numeric color value (as a string) must be in the selected set.
+            color_key = color if color is not None else "none"
+            if color_key in proof_colors or glyphname in essential_glyphs:
                 keep.add(glyphname)
                 if unicode_val is not None:
                     available_codepoints.add(unicode_val)
+
+        # 3b. Transitive component closure: a yellow-flagged glyph often
+        # references un-flagged components (accent bases, decorative marks like
+        # currencybar). fontc panics if any referenced component isn't in the
+        # subset, so we walk each kept glyph's component list to fixpoint and
+        # pull in every reachable dependency. Not included in
+        # `available_codepoints` — those glyphs aren't independently proofable,
+        # they're just structural.
+        source_glyph_names = {g for g, _ in all_glyphs}
+        closure_added = set()
+        frontier = set(keep)
+        while frontier:
+            next_frontier = set()
+            for g in frontier:
+                for ref in components_by_glyph.get(g, ()):
+                    ref_clean = ref.strip().strip('"')
+                    if ref_clean and ref_clean not in keep and ref_clean in source_glyph_names:
+                        keep.add(ref_clean)
+                        closure_added.add(ref_clean)
+                        next_frontier.add(ref_clean)
+            frontier = next_frontier
+        if closure_added:
+            print(f"Component closure: pulled in {len(closure_added)} untagged dependencies")
 
         # 4. Delete non-kept glyph files
         removed = 0
@@ -649,7 +900,7 @@ def build_font(source_path, *, name=None, proof_family=None, references=None, de
         with open(fontinfo_path, "r", encoding="utf-8") as f:
             fontinfo_text = f.read()
 
-        source_all_glyphs = _read_source_glyph_names(str(source_path))
+        source_all_glyphs = _read_source_glyph_names(source_path)
         feature_inventory, drop_tags, filtered_codes = _build_feature_inventory(
             fontinfo_text, source_all_glyphs, keep
         )
@@ -712,10 +963,55 @@ def build_font(source_path, *, name=None, proof_family=None, references=None, de
                 print(result.stdout, file=sys.stderr)
             return False
 
-        print(f"Built: {OUTPUT_PATH.relative_to(PREVIEW_DIR.parent) if str(OUTPUT_PATH).startswith(str(PREVIEW_DIR.parent)) else OUTPUT_PATH}")
+        print(f"Built: {output_rel}")
+
+        # 7b. Post-compile normalization: fix two source-side authoring quirks
+        # that we know about but haven't yet corrected in the tracked
+        # .glyphspackage. When the source is fixed these become no-ops.
+        #
+        #   (a) USE_TYPO_METRICS (fsSelection bit 7). Without it the browser
+        #       picks hhea metrics for line height. Roman's source sets it via
+        #       the "Use Typo Metrics" custom parameter; the italic source
+        #       doesn't. If we don't force it on, the italic panel sits ~14%
+        #       taller than the Roman panel at the same font-size.
+        #   (b) Bold-Italic wght axis position. The italic source's Bold-Italic
+        #       instance has no explicit weightClass, so fontc emits its
+        #       coordinate at wght=900 (matching the "Axis Location" custom
+        #       parameter) instead of the standard 700. Any browser request for
+        #       font-weight:700 then interpolates 60% of the way to the master
+        #       instead of landing on it — Bold-Italic renders visibly lighter
+        #       than Bold-Roman. We just relabel the axis: the actual variation
+        #       data is keyed on normalized coordinates, so shifting the
+        #       maxValue + Bold-Italic instance from 900 → 700 lets font-weight
+        #       700 hit the real master without touching a single glyph outline.
+        try:
+            from fontTools.ttLib import TTFont
+            fnt = TTFont(output_path)
+            changed = False
+            USE_TYPO_METRICS = 0x80
+            if not (fnt["OS/2"].fsSelection & USE_TYPO_METRICS):
+                fnt["OS/2"].fsSelection |= USE_TYPO_METRICS
+                changed = True
+                print("  Post-fix: set USE_TYPO_METRICS on OS/2")
+            wght_axis = next((a for a in fnt["fvar"].axes if a.axisTag == "wght"), None)
+            if wght_axis and wght_axis.maxValue > 700:
+                old_max = wght_axis.maxValue
+                wght_axis.maxValue = 700
+                for inst in fnt["fvar"].instances:
+                    if inst.coordinates.get("wght") == old_max:
+                        inst.coordinates["wght"] = 700
+                # OS/2.usWeightClass tracks the default (regular) weight — leave
+                # it alone; only the bold end of the axis moved.
+                changed = True
+                print(f"  Post-fix: rescaled wght axis max {old_max}→700 (Bold-Italic master now at 700)")
+            if changed:
+                fnt.save(output_path)
+            fnt.close()
+        except Exception as e:
+            print(f"  Post-fix skipped ({type(e).__name__}: {e})")
 
         # 8. Write available characters manifest
-        manifest_path = os.path.join(os.path.dirname(output_path), "available-chars.json")
+        manifest_path = os.path.join(os.path.dirname(output_path), chars_name)
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(sorted(available_codepoints), f)
         print(f"Manifest: {len(available_codepoints)} codepoints written")
@@ -744,22 +1040,12 @@ def build_font(source_path, *, name=None, proof_family=None, references=None, de
                 # doesn't lie to the user.
                 feat["status"] = "missing-glyphs" if feat["missingGlyphs"] else "disabled"
 
-        features_path = os.path.join(os.path.dirname(output_path), "available-features.json")
+        features_path = os.path.join(os.path.dirname(output_path), features_name)
         with open(features_path, "w", encoding="utf-8") as f:
             json.dump(feature_inventory, f, indent=2, sort_keys=False)
         print(f"Features manifest: {len(feature_inventory)} features written")
 
-        # 9. Copy reference fonts into public/ref/ and write proof-config.json
-        ref_entries = _copy_references(references)
-        _write_proof_config(
-            project_name=project_name,
-            proof_family=proof_family,
-            ref_entries=ref_entries,
-            defaults=defaults or {},
-        )
-        print(f"Config: {CONFIG_OUTPUT.relative_to(PREVIEW_DIR.parent)}")
-
-        # 10. Print axis info
+        # 9. Print axis info
         try:
             from fontTools.ttLib import TTFont
             font = TTFont(output_path)
@@ -777,93 +1063,96 @@ def build_font(source_path, *, name=None, proof_family=None, references=None, de
             shutil.rmtree(tmp_dir)
 
 
-def _copy_references(references):
-    """Copy each reference font into preview/public/ref/ and return the
-    list of config entries to write into proof-config.json. Skips entries
-    whose source file doesn't exist (with a warning).
+# Filenames whose changes should NOT trigger a rebuild (noisy, cosmetic, or
+# autogenerated). Everything else under the .glyphspackage IS build-affecting:
+# .glyph outlines, fontinfo.plist (features/classes/OS-2), kerning.plist, etc.
+_WATCH_IGNORE = {"UIState.plist", ".DS_Store", "order.plist"}
+
+
+def _is_watch_relevant(src_path):
+    base = os.path.basename(src_path)
+    if base in _WATCH_IGNORE:
+        return False
+    if base.startswith("."):
+        return False
+    # Glyphs.app writes to a temp file then renames — accept both the final
+    # name and intermediate .plist / .glyph writes.
+    if base.endswith(".glyph") or base.endswith(".plist"):
+        return True
+    return False
+
+
+def watch_and_rebuild(
+    source_paths,
+    output_dir,
+    output_basename,
+    proof_colors=None,
+    essential_glyphs=None,
+):
+    """Watch every path in `source_paths` and rebuild the affected font
+    when a build-relevant file changes.
+
+    Args:
+        source_paths:     iterable of absolute paths to `.glyphspackage` (or
+                          `.glyphs`) directories. Each gets its own debounced
+                          handler so editing the roman doesn't retrigger the
+                          italic build.
+        output_dir, output_basename, proof_colors, essential_glyphs: same as
+        `build_font`.
+
+    Blocks until KeyboardInterrupt. Callers running this from a subprocess
+    can rely on SIGTERM propagation to unblock it.
     """
-    if not references:
-        return []
-    os.makedirs(REF_OUTPUT_DIR, exist_ok=True)
-    out = []
-    for ref in references:
-        family = ref.get("family")
-        files  = ref.get("files") or {}
-        config_files = {}
-        for style_key, src in files.items():
-            if not os.path.isfile(src):
-                print(f"  Warning: reference font missing, skipped: {src}", file=sys.stderr)
-                continue
-            # Normalize filename: <Family>-<Style>.ttf. Keeps the URL
-            # predictable and avoids leaking source-path layout.
-            ext = os.path.splitext(src)[1] or ".ttf"
-            dest_name = f"{family.replace(' ', '_')}-{style_key}{ext}"
-            dest_path = REF_OUTPUT_DIR / dest_name
-            shutil.copyfile(src, dest_path)
-            config_files[style_key] = f"ref/{dest_name}"
-        if config_files:
-            out.append({"family": family, "files": config_files})
-    return out
-
-
-def _write_proof_config(*, project_name, proof_family, ref_entries, defaults):
-    """Write proof-config.json — the runtime bridge the React app fetches."""
-    cfg = {
-        "project":      {"name": project_name},
-        "proofFont":    {
-            "family": proof_family,
-            "label":  f"{proof_family} (proof subset)",
-            "file":   OUTPUT_PATH.name,
-            "weight": "100 900",
-            "style":  "normal",
-        },
-        "defaults": {
-            "headline": defaults.get("headline", project_name),
-            "body":     defaults.get("body",
-                "The quick brown fox jumps over the lazy dog "
-                "Pack my box with five dozen liquor jugs "
-                "How vexingly quick daft zebras jump"),
-        },
-        "referenceFonts": ref_entries,
-    }
-    with open(CONFIG_OUTPUT, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
-
-
-def watch_and_rebuild(source_path, watch_path, **build_kwargs):
-    """Watch for .glyph file changes and rebuild the font."""
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
 
-    class GlyphChangeHandler(FileSystemEventHandler):
-        def __init__(self):
+    source_paths = [os.fspath(p) for p in source_paths]
+    output_dir = os.fspath(output_dir)
+
+    class PackageChangeHandler(FileSystemEventHandler):
+        def __init__(self, src_path):
+            self.src_path = src_path
+            self.pkg_name = os.path.basename(src_path.rstrip(os.sep))
             self._last_build = 0
             self._debounce = 0.5
 
-        def on_modified(self, event):
+        def on_any_event(self, event):
             if event.is_directory:
                 return
-            if not event.src_path.endswith(".glyph"):
+            if event.event_type not in ("created", "modified", "moved"):
                 return
-            self._trigger_rebuild()
-
-        def on_created(self, event):
-            if not event.is_directory and event.src_path.endswith(".glyph"):
-                self._trigger_rebuild()
-
-        def _trigger_rebuild(self):
+            path = getattr(event, "dest_path", None) or event.src_path
+            if not _is_watch_relevant(path):
+                return
             now = time.time()
             if now - self._last_build < self._debounce:
                 return
             self._last_build = now
-            print("\n--- Change detected, rebuilding... ---")
-            build_font(source_path, **build_kwargs)
+            print(
+                f"\n--- {self.pkg_name}: change detected "
+                f"({os.path.basename(path)}), rebuilding... ---"
+            )
+            build_font(
+                self.src_path, output_dir, output_basename,
+                proof_colors=proof_colors,
+                essential_glyphs=essential_glyphs,
+            )
 
-    handler = GlyphChangeHandler()
     observer = Observer()
-    observer.schedule(handler, watch_path, recursive=True)
+    watched = []
+    for src in source_paths:
+        if not os.path.isdir(src):
+            print(f"Warning: skipping missing source {src}", file=sys.stderr)
+            continue
+        observer.schedule(PackageChangeHandler(src), src, recursive=True)
+        watched.append(src)
+    if not watched:
+        print("Nothing to watch.", file=sys.stderr)
+        return
     observer.start()
-    print(f"Watching {watch_path} for changes (Ctrl+C to stop)...")
+    print("Watching (Ctrl+C to stop):")
+    for p in watched:
+        print(f"  {p}")
 
     try:
         while True:
@@ -871,153 +1160,3 @@ def watch_and_rebuild(source_path, watch_path, **build_kwargs):
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
-
-
-def _parse_reference_arg(value):
-    """`Verdana:regular=/path/to/Verdana.ttf` → ('Verdana', 'regular', '/path/...').
-    Bare `Verdana=/path` defaults the style to `regular`.
-    """
-    if "=" not in value:
-        raise argparse.ArgumentTypeError(
-            f"--reference expects FAMILY[:STYLE]=PATH, got: {value!r}"
-        )
-    spec, path = value.split("=", 1)
-    if ":" in spec:
-        family, style = spec.split(":", 1)
-    else:
-        family, style = spec, "regular"
-    style = style.strip()
-    valid_styles = {"regular", "bold", "italic", "boldItalic"}
-    # Allow snake_case for boldItalic since `bold_italic` reads more naturally.
-    if style == "bold_italic":
-        style = "boldItalic"
-    if style not in valid_styles:
-        raise argparse.ArgumentTypeError(
-            f"--reference style must be one of {sorted(valid_styles)}, got: {style!r}"
-        )
-    return (family.strip(), style, path.strip())
-
-
-def _references_from_audit_config():
-    """Fallback: build a single Reference-family entry from any [instances.*]
-    `ref = "..."` paths in ~/.glyph-audit/config.toml. Each instance is
-    treated as one style (regular/bold by name match). Returns [] if the
-    config doesn't exist or has no usable entries.
-    """
-    if not USER_CONFIG.exists():
-        return []
-    try:
-        import tomllib
-    except ImportError:
-        return []
-    try:
-        with open(USER_CONFIG, "rb") as f:
-            data = tomllib.load(f)
-    except Exception:
-        return []
-    instances = data.get("instances") or {}
-    style_map = {}
-    for inst_name, entry in instances.items():
-        if not isinstance(entry, dict):
-            continue
-        ref_path = entry.get("ref")
-        if not isinstance(ref_path, str) or not os.path.isfile(ref_path):
-            continue
-        n = inst_name.lower()
-        if "bold" in n and "italic" in n: style_map["boldItalic"] = ref_path
-        elif "bold" in n:                 style_map["bold"]       = ref_path
-        elif "italic" in n:               style_map["italic"]     = ref_path
-        else:                             style_map["regular"]    = ref_path
-    if not style_map:
-        return []
-    # Read the family name out of the regular file's name table if we can.
-    family = "Reference"
-    try:
-        from fontTools.ttLib import TTFont
-        any_path = style_map.get("regular") or next(iter(style_map.values()))
-        f = TTFont(any_path)
-        for record in f["name"].names:
-            if record.nameID == 1:  # family
-                family = str(record)
-                break
-        f.close()
-    except Exception:
-        pass
-    return [{"family": family, "files": style_map}]
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Build the proof font + manifests + runtime config "
-                    "for the GlyphAudit Preview Vite app.",
-    )
-    parser.add_argument(
-        "--source", required=True,
-        help="Path to the typeface .glyphspackage / .glyphs source.",
-    )
-    parser.add_argument(
-        "--name",
-        help="Project name (default: source filename stem). Used as the "
-             "default headline and to derive the proof font family name.",
-    )
-    parser.add_argument(
-        "--proof-family",
-        help="Override the proof font family name (default: '<NAME> Proof').",
-    )
-    parser.add_argument(
-        "--reference", action="append", default=[], type=_parse_reference_arg,
-        metavar="FAMILY[:STYLE]=PATH",
-        help="Reference font to bundle for the comparison panel. Style is "
-             "one of regular|bold|italic|boldItalic (default: regular). "
-             "Repeat for each style. If none given, falls back to any "
-             "[instances.*] entries in ~/.glyph-audit/config.toml.",
-    )
-    parser.add_argument(
-        "--headline", help="Override the default headline text.",
-    )
-    parser.add_argument(
-        "--body", help="Override the default body text.",
-    )
-    parser.add_argument(
-        "--watch", action="store_true",
-        help="Watch the source for changes and rebuild (requires watchdog).",
-    )
-    args = parser.parse_args()
-
-    if not shutil.which("fontc"):
-        print("Error: fontc not found. Install with: pip install fontc", file=sys.stderr)
-        sys.exit(1)
-
-    source_path = os.path.abspath(args.source)
-
-    # Group --reference flags by family.
-    refs_by_family = {}
-    for family, style, path in args.reference:
-        refs_by_family.setdefault(family, {"family": family, "files": {}})
-        refs_by_family[family]["files"][style] = os.path.abspath(path)
-    references = list(refs_by_family.values()) or _references_from_audit_config()
-
-    defaults = {}
-    if args.headline is not None: defaults["headline"] = args.headline
-    if args.body is not None:     defaults["body"]     = args.body
-
-    build_kwargs = dict(
-        name=args.name,
-        proof_family=args.proof_family,
-        references=references,
-        defaults=defaults,
-    )
-    success = build_font(source_path, **build_kwargs)
-    if not success and not args.watch:
-        sys.exit(1)
-
-    if args.watch:
-        watch_and_rebuild(
-            source_path,
-            os.path.join(source_path, "glyphs"),
-            **build_kwargs,
-        )
-
-
-if __name__ == "__main__":
-    main()

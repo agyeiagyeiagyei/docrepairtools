@@ -8,6 +8,10 @@ dist/
 .eggs/
 pip-wheel-metadata/
 
+# Node (proof webapp) — dist/ is already covered by the pattern above;
+# CI rebuilds it from src at release time (see .github/workflows/publish.yml)
+node_modules/
+
 # Virtualenvs
 .venv/
 venv/

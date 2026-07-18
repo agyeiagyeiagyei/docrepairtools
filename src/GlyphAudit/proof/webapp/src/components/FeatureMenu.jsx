@@ -4,7 +4,7 @@ const STATUS_META = {
   compiled: {
     dot: 'compiled',
     label: 'Ready in proof font',
-    hint: 'Compiled into the proof font. Click to apply to selection.',
+    hint: 'Compiled into Velarium-proof.ttf. Click to apply to selection.',
   },
   'missing-glyphs': {
     dot: 'missing',
@@ -51,7 +51,7 @@ export default function FeatureMenu({ features, onApply, onClear, disabled }) {
       <button
         className="toggle feature-menu-trigger"
         onMouseDown={(e) => {
-          e.preventDefault() // keep selection alive on the proof panel
+          e.preventDefault() // keep selection alive on Velarium panel
           setOpen((o) => !o)
         }}
         disabled={disabled}

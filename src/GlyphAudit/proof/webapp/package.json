@@ -1,8 +1,8 @@
 {
-  "name": "glyphaudit-preview",
-  "description": "Side-by-side proof viewer for GlyphAudit — typeface under development vs reference font.",
+  "name": "glyph-audit-proof-app",
   "private": true,
   "version": "0.1.0",
+  "description": "Side-by-side proofing UI shipped inside the glyph-audit Python package. Source lives here; production builds land under dist/ and get served by `glyph-audit proof serve`.",
   "type": "module",
   "scripts": {
     "dev": "vite",

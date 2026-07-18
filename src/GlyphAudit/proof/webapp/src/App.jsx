@@ -1,58 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Controls from './components/Controls'
 import TextPanel from './components/TextPanel'
+import { FALLBACK_CONFIG, injectFontFaces, loadProofConfig } from './proofConfig'
 import './App.css'
 
-// Fallback values used until proof-config.json loads (or if the build script
-// hasn't run yet). The build script writes proof-config.json into public/
-// alongside the proof font; we fetch it on startup.
-const FALLBACK_PROOF_FAMILY = 'Proof'
-const FALLBACK_HEADLINE = 'Proof'
 const DEFAULT_BODY =
   'The quick brown fox jumps over the lazy dog Pack my box with five dozen liquor jugs How vexingly quick daft zebras jump'
-
-// Inject @font-face declarations for the proof font (built locally) and any
-// reference fonts the config lists. Idempotent — replaces a single <style>
-// node tagged with our id on every config change.
-function injectFontFaces(config) {
-  const id = 'glyphaudit-preview-fontfaces'
-  let style = document.getElementById(id)
-  if (!style) {
-    style = document.createElement('style')
-    style.id = id
-    document.head.appendChild(style)
-  }
-  const rules = []
-  if (config?.proofFont?.file) {
-    rules.push(
-      `@font-face {`,
-      `  font-family: '${config.proofFont.family}';`,
-      `  src: url('/${config.proofFont.file}') format('truetype');`,
-      `  font-weight: ${config.proofFont.weight || '100 900'};`,
-      `  font-style: ${config.proofFont.style || 'normal'};`,
-      `}`,
-    )
-  }
-  for (const ref of (config?.referenceFonts || [])) {
-    for (const [styleKey, file] of Object.entries(ref.files || {})) {
-      const [weight, fontStyle] =
-        styleKey === 'regular'    ? ['400', 'normal'] :
-        styleKey === 'bold'       ? ['700', 'normal'] :
-        styleKey === 'italic'     ? ['400', 'italic'] :
-        styleKey === 'boldItalic' ? ['700', 'italic'] :
-                                    ['400', 'normal']
-      rules.push(
-        `@font-face {`,
-        `  font-family: '${ref.family}';`,
-        `  src: url('/${file}') format('truetype');`,
-        `  font-weight: ${weight};`,
-        `  font-style: ${fontStyle};`,
-        `}`,
-      )
-    }
-  }
-  style.textContent = rules.join('\n')
-}
 
 // Base font-feature-settings applied to every editable region. Kept in sync
 // with the panel-level rule in App.css; feature-spans concatenate onto this
@@ -65,10 +18,22 @@ const BASE_FEATURE_OFF = [
 const featureCssFor = (tag) =>
   [...BASE_FEATURE_OFF, `'${tag}' 1`].join(', ')
 
-function addMissingUnderlines(html, charSet) {
-  if (!charSet) return html
-  // Walk through text content, wrapping missing chars
-  // Preserve existing HTML tags
+// Wrap each visible character in the proof panel with a class describing
+// the strongest signal about it. Two classes, applied in priority order:
+//
+//   .missing-glyph   — character has no glyph in the proof face at all
+//                      (red wavy underline; structural absence).
+//   .width-mismatch  — advance width diverges from the paired reference
+//                      by more than 1u (amber text colour; the widths
+//                      manifest is per-reference so this updates when
+//                      the "Compare with" dropdown changes).
+//
+// The two classes are mutually exclusive per glyph — a missing character
+// can't be measured, so it stays "missing" only. Tooltip carries the
+// delta for width mismatches so the user can jump straight to the
+// numeric divergence without opening the Glyphs.app panel.
+function applyGlyphMarks(html, charSet, widthDeltas) {
+  if (!charSet && !widthDeltas) return html
   let result = ''
   let inTag = false
   for (let i = 0; i < html.length; i++) {
@@ -76,7 +41,7 @@ function addMissingUnderlines(html, charSet) {
     if (ch === '<') { inTag = true; result += ch; continue }
     if (ch === '>') { inTag = false; result += ch; continue }
     if (inTag) { result += ch; continue }
-    // Handle HTML entities
+    // Handle HTML entities as opaque runs (`&amp;` etc.).
     if (ch === '&') {
       const semi = html.indexOf(';', i)
       if (semi !== -1 && semi - i < 8) {
@@ -86,22 +51,34 @@ function addMissingUnderlines(html, charSet) {
       }
     }
     const cp = ch.codePointAt(0)
-    if (cp > 32 && !charSet.has(cp)) {
+    if (cp <= 32) { result += ch; continue }
+    if (charSet && !charSet.has(cp)) {
       result += `<span class="missing-glyph">${ch}</span>`
-    } else {
-      result += ch
+      continue
     }
+    if (widthDeltas) {
+      const delta = widthDeltas.get(cp)
+      if (delta !== undefined) {
+        const sign = delta > 0 ? '+' : ''
+        result += `<span class="width-mismatch" title="advance ${sign}${delta}u vs reference">${ch}</span>`
+        continue
+      }
+    }
+    result += ch
   }
   return result
 }
 
-function stripMissingUnderlines(html) {
-  return html.replace(/<span class="missing-glyph">([^<]*)<\/span>/g, '$1')
+function stripGlyphMarks(html) {
+  // Both marker classes strip the same way — they wrap a single text run.
+  return html
+    .replace(/<span class="missing-glyph">([^<]*)<\/span>/g, '$1')
+    .replace(/<span class="width-mismatch"(?:\s+title="[^"]*")?>([^<]*)<\/span>/g, '$1')
 }
 
 // Wrap the current Selection range with a <span data-otf-feature="TAG"> carrying
 // the merged font-feature-settings string. No-op if the selection is empty or
-// outside the proof panel. The right (reference) panel mirrors via syncToSystem.
+// outside the Velarium panel. The right panel mirrors via syncToSystem.
 function wrapSelectionWithFeature(panelEl, tag) {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return false
@@ -141,8 +118,10 @@ function clearFeatureSpansInSelection(panelEl) {
 }
 
 function App() {
-  const [config, setConfig] = useState(null)
-  const [systemFont, setSystemFont] = useState(null)
+  const [proofConfig, setProofConfig] = useState(FALLBACK_CONFIG)
+  const [configLoaded, setConfigLoaded] = useState(false)
+  const [configReason, setConfigReason] = useState(null)
+  const [systemFont, setSystemFont] = useState('')
   const [headlineSize, setHeadlineSize] = useState(48)
   const [bodySize, setBodySize] = useState(16)
   const [lineHeight, setLineHeight] = useState(1.4)
@@ -150,43 +129,64 @@ function App() {
   const [fontLoaded, setFontLoaded] = useState(true)
   const [availableChars, setAvailableChars] = useState(null)
   const [availableFeatures, setAvailableFeatures] = useState(null)
+  // Map<codepoint, delta> for the currently-selected reference. Loaded from
+  // `/widths-roman-<slug>.json` (built by GlyphAudit.proof.write_width_manifests).
+  // Null → not yet loaded / no reference selected; empty Map → loaded, no
+  // mismatches. Both mean "no width marks on this render".
+  const [widthDeltas, setWidthDeltas] = useState(null)
 
-  const proofRef = useRef(null)
+  const velariumRef = useRef(null)
   const systemRef = useRef(null)
-
-  const proofFamily = config?.proofFont?.family || FALLBACK_PROOF_FAMILY
-  const proofLabel = config?.proofFont?.label || proofFamily
-  const defaultHeadline = config?.defaults?.headline || FALLBACK_HEADLINE
-  const defaultBody = config?.defaults?.body || DEFAULT_BODY
-  const referenceFontFamilies =
-    (config?.referenceFonts || []).map((r) => r.family)
-  const systemFontFamily = systemFont ?? referenceFontFamilies[0] ?? 'Verdana'
+  const familyName = proofConfig.familyName
+  const referenceNames = proofConfig.references.map((r) => r.name)
+  const chars_manifest = proofConfig.faces.roman?.chars || '/available-chars.json'
+  const features_manifest = proofConfig.faces.roman?.features || '/available-features.json'
 
   useEffect(() => {
-    document.fonts.ready.then(() => {
-      const loaded = document.fonts.check(`16px "${proofFamily}"`)
+    let cancelled = false
+    loadProofConfig().then(({ config, source, reason }) => {
+      if (cancelled) return
+      injectFontFaces(config)
+      setProofConfig(config)
+      setConfigLoaded(true)
+      setConfigReason(source === 'fallback' ? reason : null)
+      // Default the reference dropdown to the first reference the config
+      // gave us, if any — otherwise leave the previous selection.
+      if (config.references[0]?.name) {
+        setSystemFont((prev) => prev || config.references[0].name)
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!configLoaded) return
+    // Force both proof faces to load up-front. Without this the italic face
+    // is only fetched the first time an italic run appears in the DOM, which
+    // produces a visible weight shift as the browser swaps synthetic-oblique-
+    // on-Roman for the real italic on the next paint.
+    const wantItalic = Boolean(proofConfig.faces.italic?.ttf)
+    Promise.all([
+      document.fonts.load(`16px "${familyName}"`),
+      wantItalic ? document.fonts.load(`italic 16px "${familyName}"`) : Promise.resolve(),
+    ]).finally(() => {
+      const loaded =
+        document.fonts.check(`16px "${familyName}"`) &&
+        (!wantItalic || document.fonts.check(`italic 16px "${familyName}"`))
       setFontLoaded(loaded)
     })
-  }, [proofFamily])
+  }, [configLoaded, familyName, proofConfig])
 
   useEffect(() => {
+    if (!chars_manifest || !features_manifest) return
     const loadManifests = () => {
-      fetch('/proof-config.json', { cache: 'no-store' })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((c) => {
-          if (c) {
-            setConfig(c)
-            injectFontFaces(c)
-          }
-        })
-        .catch(() => {})
-      fetch('/available-chars.json', { cache: 'no-store' })
+      fetch(chars_manifest, { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : null))
         .then((codepoints) => {
           if (codepoints) setAvailableChars(new Set(codepoints))
         })
         .catch(() => {})
-      fetch('/available-features.json', { cache: 'no-store' })
+      fetch(features_manifest, { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : null))
         .then((features) => {
           if (features) setAvailableFeatures(features)
@@ -196,17 +196,45 @@ function App() {
     loadManifests()
     const interval = setInterval(loadManifests, 3000)
     return () => clearInterval(interval)
-  }, [])
+  }, [chars_manifest, features_manifest])
+
+  // Load the width-mismatch manifest for the currently-selected reference.
+  // Re-fetches whenever `systemFont` changes. Slug convention must stay
+  // in sync with GlyphAudit.proof.build._slugify — kebabbed lowercase.
+  useEffect(() => {
+    if (!configLoaded || !systemFont) {
+      setWidthDeltas(null)
+      return
+    }
+    const slug = systemFont.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    // Only the roman face here — italic width comparison is future work.
+    const url = `/widths-roman-${slug}.json`
+    let cancelled = false
+    const load = () => {
+      fetch(url, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((entries) => {
+          if (cancelled || !entries) return
+          const m = new Map()
+          for (const e of entries) m.set(e.cp, e.delta)
+          setWidthDeltas(m)
+        })
+        .catch(() => {})
+    }
+    load()
+    const interval = setInterval(load, 3000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [configLoaded, systemFont])
 
   const syncToSystem = useCallback(() => {
-    const h = proofRef.current?.getHeadlineHtml()
-    const b = proofRef.current?.getBodyHtml()
-    if (h != null) systemRef.current?.setHeadlineHtml(stripMissingUnderlines(h))
-    if (b != null) systemRef.current?.setBodyHtml(stripMissingUnderlines(b))
+    const h = velariumRef.current?.getHeadlineHtml()
+    const b = velariumRef.current?.getBodyHtml()
+    if (h != null) systemRef.current?.setHeadlineHtml(stripGlyphMarks(h))
+    if (b != null) systemRef.current?.setBodyHtml(stripGlyphMarks(b))
   }, [])
 
   const handleBold = useCallback(() => {
-    if (proofRef.current?.execCommand('bold')) {
+    if (velariumRef.current?.execCommand('bold')) {
       syncToSystem()
       return
     }
@@ -214,7 +242,7 @@ function App() {
   }, [syncToSystem])
 
   const handleItalic = useCallback(() => {
-    if (proofRef.current?.execCommand('italic')) {
+    if (velariumRef.current?.execCommand('italic')) {
       syncToSystem()
       return
     }
@@ -244,9 +272,12 @@ function App() {
     return () => vPanel.removeEventListener('input', syncToSystem)
   }, [syncToSystem])
 
-  // Apply underlines to missing chars, but only when not actively editing
+  // Apply per-character marks (missing-glyph + width-mismatch) to the proof
+  // panel, but only when not actively editing so the caret doesn't jump.
+  // Re-runs whenever the missing-char set OR the width-mismatch map changes,
+  // so switching references paints the new reference's deltas.
   useEffect(() => {
-    if (!availableChars) return
+    if (!availableChars && !widthDeltas) return
     const vPanel = document.querySelector('.panels > :first-child')
     if (!vPanel) return
 
@@ -255,8 +286,8 @@ function App() {
       for (const el of editables) {
         // Skip if this element or a child is focused
         if (el.contains(document.activeElement) || el === document.activeElement) continue
-        const clean = stripMissingUnderlines(el.innerHTML)
-        const marked = addMissingUnderlines(clean, availableChars)
+        const clean = stripGlyphMarks(el.innerHTML)
+        const marked = applyGlyphMarks(clean, availableChars, widthDeltas)
         if (el.innerHTML !== marked) el.innerHTML = marked
       }
     }
@@ -272,25 +303,32 @@ function App() {
 
     vPanel.addEventListener('focusout', onFocusOut)
     return () => vPanel.removeEventListener('focusout', onFocusOut)
-  }, [availableChars])
+  }, [availableChars, widthDeltas])
 
   const sharedTypography = {
     lineHeight,
     letterSpacing: letterSpacing + 'em',
   }
 
+  const defaultHeadline = familyName
+
   return (
     <div className="app">
       {!fontLoaded && (
         <div className="banner">
-          Proof font not loaded — run the build (e.g. <code>python build.py</code>) first.
+          Font not built — run the build to populate <code>proof-config.json</code>.
+        </div>
+      )}
+      {configLoaded && configReason && (
+        <div className="banner">
+          Using fallback config (couldn't load <code>proof-config.json</code>: {configReason}).
         </div>
       )}
 
       <Controls
-        systemFont={systemFontFamily}
+        systemFont={systemFont}
         onSystemFontChange={setSystemFont}
-        referenceFontFamilies={referenceFontFamilies}
+        referenceFonts={referenceNames}
         onBold={handleBold}
         onItalic={handleItalic}
         headlineSize={headlineSize}
@@ -308,13 +346,13 @@ function App() {
 
       <div className="panels">
         <TextPanel
-          ref={proofRef}
-          label={proofLabel}
-          fontFamily={proofFamily}
+          ref={velariumRef}
+          label={familyName}
+          fontFamily={familyName}
           fontWeight={400}
           fontStyle={false}
           defaultHeadline={defaultHeadline}
-          defaultBody={defaultBody}
+          defaultBody={DEFAULT_BODY}
           headlineSize={headlineSize}
           bodySize={bodySize}
           typography={sharedTypography}
@@ -322,12 +360,12 @@ function App() {
 
         <TextPanel
           ref={systemRef}
-          label={systemFontFamily}
-          fontFamily={systemFontFamily}
+          label={systemFont || '(no reference)'}
+          fontFamily={systemFont || 'sans-serif'}
           fontWeight={400}
           fontStyle={false}
           defaultHeadline={defaultHeadline}
-          defaultBody={defaultBody}
+          defaultBody={DEFAULT_BODY}
           headlineSize={headlineSize}
           bodySize={bodySize}
           typography={sharedTypography}

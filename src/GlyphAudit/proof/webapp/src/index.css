@@ -1,8 +1,10 @@
-/* All @font-face declarations are injected at runtime by App.jsx based on
- * proof-config.json — the proof font from the build script, plus any
- * reference fonts the user wired up. This keeps the static stylesheet
- * generic (no typeface-specific identifiers) and lets the same React
- * bundle proof any project. */
+/*
+ * @font-face rules for the proof face + all reference families are injected
+ * at runtime from `proof-config.json` (see proofConfig.js). Local families
+ * bundled with the tool guarantee the same GSUB feature set across users,
+ * regardless of what their OS ships. macOS's system Verdana, for example,
+ * only carries `locl` and would make feature comparisons impossible.
+ */
 
 :root {
   --bg: #fafafa;

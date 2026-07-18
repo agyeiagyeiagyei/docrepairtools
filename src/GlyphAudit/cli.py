@@ -73,38 +73,38 @@ def _split_pair(arg: str) -> tuple[str, str]:
     return name.strip(), ref.strip()
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="glyph-audit",
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--target", required=True,
+def _build_audit_parser(audit: argparse.ArgumentParser) -> None:
+    """Attach the (existing) `--target` / `--pair` / … argument set to
+    whatever parser it's given. Split out from `main` so the same argument
+    schema powers both the top-level backcompat invocation and the
+    `glyph-audit audit` subcommand.
+    """
+    audit.add_argument("--target", required=True,
                         help="Path to target font (.glyphspackage / .glyphs / .ttf / .otf)")
-    parser.add_argument("--pair", action="append", default=[], type=_split_pair,
+    audit.add_argument("--pair", action="append", default=[], type=_split_pair,
                         metavar="NAME=REFERENCE",
                         help="Map a target master name to a reference font. "
                              "Reference may be a TTF/OTF path, a Glyphs source path, "
                              "'Family-system', or any of those with an "
                              "'@axis=value[,axis=value]' suffix to pin a variable font. "
                              "Repeatable. Required unless --from-config is given.")
-    parser.add_argument("--from-config", action="store_true", default=None,
+    audit.add_argument("--from-config", action="store_true", default=None,
                         help="Build pairs from [instances.NAME] sections in the "
                              "config file (default ~/.glyph-audit/config.toml; "
                              "override with --config). Adds to any --pair entries.")
     # All defaults below are sentinel-None so we can layer config defaults
     # on top before falling back to HARDCODED values.
-    parser.add_argument("--output", default=None,
+    audit.add_argument("--output", default=None,
                         help="Markdown report path. Default: "
                              "'glyph-audit-report.md' (or 'glyph-audit-filtered.md' "
                              "if --filter is set). Overridable via [defaults].output in config.")
-    parser.add_argument("--tolerance", type=float, default=None,
+    audit.add_argument("--tolerance", type=float, default=None,
                         help="Advance-width tolerance in font units (default: 1.0).")
-    parser.add_argument("--no-normalize-upm", action="store_true", default=None,
+    audit.add_argument("--no-normalize-upm", action="store_true", default=None,
                         help="Compare raw advances without normalising to 1000 UPM.")
-    parser.add_argument("--title", default=None,
+    audit.add_argument("--title", default=None,
                         help="Report title (default: 'Glyph Audit Report').")
-    parser.add_argument(
+    audit.add_argument(
         "--filter",
         choices=["all"] + sorted(COLOR_FILTERS.keys()),
         default=None,
@@ -113,7 +113,7 @@ def main(argv: Optional[list[str]] = None) -> int:
              "'ready' = yellow OR light-green. Only effective for "
              ".glyphs / .glyphspackage target sources; ignored for TTFs.",
     )
-    parser.add_argument(
+    audit.add_argument(
         "--ai",
         choices=["claude", "openai", "gemini"],
         default=None,
@@ -121,13 +121,13 @@ def main(argv: Optional[list[str]] = None) -> int:
              "using the chosen provider. Requires the provider's SDK and an "
              "API key (in ~/.glyph-audit/config.toml or env vars).",
     )
-    parser.add_argument(
+    audit.add_argument(
         "--prompt",
         default=None,
         help="Path to a custom prompt template. Defaults to the bundled "
              "prompts/health_check.md inside the package.",
     )
-    parser.add_argument(
+    audit.add_argument(
         "--config",
         default=None,
         help="Path to config TOML (default: ~/.glyph-audit/config.toml). "
@@ -135,8 +135,13 @@ def main(argv: Optional[list[str]] = None) -> int:
              "See examples/config.toml.example for the schema.",
     )
 
-    args = parser.parse_args(argv)
 
+def _run_audit(args, parser) -> int:
+    """Execute the audit given already-parsed CLI args. `parser` is passed
+    only for `parser.error(...)` — the runtime dispatch below happens to
+    call it for the "at least one --pair" bootstrap case, and it wants to
+    hit whichever parser matches the invocation form (top-level or
+    `audit` subcommand)."""
     # Load [defaults] from the config file (silently missing is fine).
     try:
         config_defaults = load_defaults(args.config)
@@ -307,6 +312,67 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     print(f"Wrote {args.output}", file=sys.stderr)
     return 1 if any_mismatch else 0
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """Top-level dispatcher.
+
+    Supports two invocation forms for backwards compatibility:
+        glyph-audit --target … --pair …          (legacy — implicit `audit`)
+        glyph-audit audit --target … --pair …    (explicit)
+        glyph-audit proof {build|watch|serve|panel install} …
+
+    Detection rule: if the first token is a known subcommand, treat it as
+    such; otherwise inject `audit` at the front. This lets pre-0.2 scripts
+    keep working without modification while `proof` gets a clean namespace.
+    """
+    from .cli_proof import add_proof_subparser, dispatch as proof_dispatch
+
+    if argv is None:
+        argv = sys.argv[1:]
+
+    KNOWN_SUBCOMMANDS = {"audit", "proof", "-h", "--help", "-V", "--version"}
+    if argv and argv[0] not in KNOWN_SUBCOMMANDS and not argv[0].startswith("--"):
+        # First token is a positional but not a subcommand — treat as
+        # accidental typo; parse anyway so the user sees the usage.
+        pass
+    if argv and argv[0].startswith("--"):
+        # Legacy: `glyph-audit --target …`. Inject `audit` so subparser
+        # parsing works.
+        argv = ["audit"] + argv
+
+    parser = argparse.ArgumentParser(
+        prog="glyph-audit",
+        description=(
+            "GlyphAudit — audit reports + live proofing pipeline for type designers.\n\n"
+            "Subcommands:\n"
+            "  audit   Legacy default. Compare a target font against reference pairs.\n"
+            "  proof   Build + serve the proof web app (config from glyph-audit.toml)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest="cmd")
+
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="Coverage/width report against reference fonts.",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _build_audit_parser(audit_parser)
+    audit_parser.set_defaults(_run=lambda a: _run_audit(a, audit_parser))
+
+    add_proof_subparser(subparsers)
+
+    args = parser.parse_args(argv)
+    if args.cmd is None:
+        parser.print_help(sys.stderr)
+        return 2
+
+    if args.cmd == "proof":
+        return proof_dispatch(args)
+    # `_run` is set by _build_audit_parser via set_defaults above.
+    return args._run(args)
 
 
 def _basename(path: str) -> str:
