@@ -1,4 +1,4 @@
-#MenuTitle: Width Audit
+#MenuTitle: Glyph Audit
 # -*- coding: utf-8 -*-
 """Glyphs.app panel for advance-width auditing against a reference font.
 
@@ -64,7 +64,7 @@ from GlyphsApp import Glyphs, UPDATEINTERFACE, DRAWBACKGROUND
 
 from GlyphAudit.comparator import TieredComparator
 from GlyphAudit.model import GLYPHS_COLOR_NAMES
-from GlyphAudit.proof.panel.common import (
+from GlyphAudit.proof.panel.audit_common import (
     filter_for,
     fontview_from_master,
     load_audit_references,
@@ -145,7 +145,7 @@ class WidthAuditPanel:
     def _build_ui(self) -> None:
         W, H = 640, 560
         self.w = vanilla.FloatingWindow(
-            (W, H), "Width Audit",
+            (W, H), "Glyph Audit",
             autosaveName="WidthAuditPanel", minSize=(520, 380),
         )
         y = 12

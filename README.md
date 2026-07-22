@@ -10,11 +10,11 @@ Ships two complementary surfaces:
 
   ![Proof web view — Velarium vs Verdana](docs/screenshots/proof-web.png)
 
-- **Glyphs.app Width Audit panel** — a floating table of advance-width mismatches against a chosen reference master. Auto-pairs system font families to the active master's style (Bold master picks Verdana Bold, Italic picks Verdana Italic).
+- **Glyphs.app panels** — installed as one **Script → DocRepair Tools** submenu with two entries: **Glyph Audit** (live advance-width mismatch table with per-master reference pins, plus an edit-view overlay drawing the reference outline, its nodes, and metric-delta bands behind your glyph) and **Make Proof** (colour-filtered proof compiler + launcher for the web view).
 
   ![Width Audit panel](docs/screenshots/width-audit-panel.png)
 
-Both are installed by `pip install docrepair-glyph-audit[proof]`; the panel then symlinks via `glyph-audit proof panel install`.
+Both are installed by `pip install docrepair-glyph-audit[proof]`; the submenu then installs via `glyph-audit proof panel install`.
 
 ## Install
 

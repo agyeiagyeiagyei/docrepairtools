@@ -270,19 +270,29 @@ def cmd_serve(args) -> int:
 
 _GLYPHS_SCRIPTS_DIR = Path.home() / "Library/Application Support/Glyphs 3/Scripts"
 
-# (menu title → panel filename inside GlyphAudit.proof.panel). The panels
-# are independent — installing lays down both symlinks. Any pre-split
-# `Glyph Proof.py` symlink that still points at panel.py (the shim) gets
-# replaced by the new proof-only file.
+# A folder inside Glyphs's Scripts dir renders as a SUBMENU — so the two
+# tools install as one "DocRepair Tools" entry with dropdown items,
+# rather than two loose top-level scripts.
+_MENU_DIR = _GLYPHS_SCRIPTS_DIR / "DocRepair Tools"
 _PANELS = (
-    ("Glyph Proof.py", "proof_panel.py"),
-    ("Width Audit.py", "audit_panel.py"),
+    ("Glyph Audit.py", "audit_panel.py"),
+    ("Make Proof.py", "proof_panel.py"),
+)
+
+# Superseded top-level symlinks from earlier generations of the installer.
+# Removed on every install so upgrades don't leave duplicate menu items.
+_LEGACY_LINKS = (
+    "Glyph Proof.py",
+    "Width Audit.py",
+    "Velarium Proof.py",
+    "Width Audit Panel.py",
 )
 
 
 def cmd_panel_install(args) -> int:
-    """Symlink both panels (Glyph Proof + Width Audit) into Glyphs 3's
-    user-scripts folder. Replaces any existing symlink at those names.
+    """Install the DocRepair Tools submenu into Glyphs 3's user-scripts
+    folder: Script → DocRepair Tools → {Glyph Audit, Make Proof}.
+    Replaces any existing links and removes superseded top-level ones.
     """
     from importlib import resources
 
@@ -297,10 +307,16 @@ def cmd_panel_install(args) -> int:
         return 2
 
     try:
-        _GLYPHS_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        _MENU_DIR.mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        print(f"FAIL: could not create {_GLYPHS_SCRIPTS_DIR}: {e}", file=sys.stderr)
+        print(f"FAIL: could not create {_MENU_DIR}: {e}", file=sys.stderr)
         return 2
+
+    for legacy in _LEGACY_LINKS:
+        stale = _GLYPHS_SCRIPTS_DIR / legacy
+        if stale.exists() or stale.is_symlink():
+            stale.unlink()
+            print(f"Removed superseded link: {stale.name}")
 
     for menu_name, filename in _PANELS:
         panel_ref = pkg_ref.joinpath(filename)
@@ -310,14 +326,14 @@ def cmd_panel_install(args) -> int:
             print(f"FAIL: panel file not found at {src}", file=sys.stderr)
             return 2
 
-        dest = _GLYPHS_SCRIPTS_DIR / menu_name
+        dest = _MENU_DIR / menu_name
         if dest.exists() or dest.is_symlink():
             dest.unlink()
         dest.symlink_to(src)
         print(f"Symlinked: {dest} → {src}")
 
     print("In Glyphs: hold Option and click Script → Reload Scripts (or relaunch).")
-    print("Menu items: Script → Glyph Proof · Script → Width Audit")
+    print("Menu: Script → DocRepair Tools → Glyph Audit · Make Proof")
     return 0
 
 

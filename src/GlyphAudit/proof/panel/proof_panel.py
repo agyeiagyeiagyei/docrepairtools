@@ -1,4 +1,4 @@
-#MenuTitle: Glyph Proof
+#MenuTitle: Make Proof
 # -*- coding: utf-8 -*-
 """Glyphs.app panel for the `glyph-audit proof` browser view.
 
@@ -23,6 +23,7 @@ Install
 
 import os
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -55,16 +56,116 @@ for _mod in [m for m in sys.modules if m == "GlyphAudit" or m.startswith("GlyphA
 import vanilla
 from GlyphsApp import Glyphs
 
-from GlyphAudit.proof.config import DEFAULT_PROOF_COLORS, GLYPHS_COLORS
-from GlyphAudit.proof.panel.common import (
-    DEV_SERVER_URL,
-    PROOF_STATE_PATH,
-    find_glyph_audit_cli,
-    load_state,
-    login_shell_path,
-    project_config_for,
-    save_state,
+from GlyphAudit.proof.config import (
+    DEFAULT_PROOF_COLORS,
+    GLYPHS_COLORS,
+    ConfigError,
+    load_project_config,
 )
+# Generic JSON state I/O is shared with the audit panel; everything
+# proof-specific (project discovery, subprocess plumbing) lives right
+# here in this file so the proof vertical stays severable.
+from GlyphAudit.proof.panel.audit_common import load_state, save_state
+
+PROOF_STATE_PATH = Path.home() / ".glyph-audit" / "proof-panel-state.json"
+DEV_SERVER_URL = "http://localhost:5173"
+
+
+# ---------------------------------------------------------------------------
+# Proof-only helpers (moved here from the old shared common.py — this
+# panel is their sole consumer, and keeping them out of audit_common
+# keeps the audit side free of proof.config imports)
+# ---------------------------------------------------------------------------
+
+def project_config_for(font):
+    """Locate `glyph-audit.toml` starting from the active font's file path.
+
+    Returns (ProjectConfig, None) on success, (None, reason) on failure.
+    """
+    fp = getattr(font, "filepath", None)
+    if not fp:
+        return None, "unsaved document — save the font first"
+    start = Path(fp).resolve().parent
+    try:
+        cfg = load_project_config(start)
+    except ConfigError as e:
+        return None, str(e)
+    if cfg is None:
+        return None, "no glyph-audit.toml found up the tree"
+    return cfg, None
+
+
+def login_shell_path() -> str:
+    """Return the PATH a Terminal would see (Glyphs.app inherits launchd's
+    stripped PATH, which hides pip-installed CLIs like fontc)."""
+    for shell in ("/bin/zsh", "/bin/bash"):
+        if not os.path.exists(shell):
+            continue
+        try:
+            result = subprocess.run(
+                [shell, "-l", "-c", "echo $PATH"],
+                capture_output=True, text=True, timeout=3,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        path = (result.stdout or "").strip().splitlines()[-1:] or [""]
+        path = path[0].strip()
+        if path:
+            return path
+    return ""
+
+
+def find_glyph_audit_cli() -> list:
+    """Locate the `glyph-audit` executable from inside Glyphs.app.
+
+    Order: PATH → login-shell `command -v` → common install locations →
+    sys.executable + `-m` (only when it's clearly a Python binary, never
+    the Glyphs.app bundle). Raises RuntimeError with an actionable
+    message on total failure.
+    """
+    direct = shutil.which("glyph-audit")
+    if direct:
+        return [direct]
+
+    for shell in ("/bin/zsh", "/bin/bash"):
+        if not os.path.exists(shell):
+            continue
+        try:
+            result = subprocess.run(
+                [shell, "-l", "-c", "command -v glyph-audit"],
+                capture_output=True, text=True, timeout=3,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        candidate = (result.stdout or "").strip().splitlines()[-1:] or [""]
+        candidate = candidate[0].strip()
+        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return [candidate]
+
+    for candidate in (
+        "/usr/local/bin/glyph-audit",
+        "/opt/homebrew/bin/glyph-audit",
+        "/Library/Frameworks/Python.framework/Versions/Current/bin/glyph-audit",
+        os.path.expanduser("~/.local/bin/glyph-audit"),
+        os.path.expanduser("~/Library/Python/3.11/bin/glyph-audit"),
+        os.path.expanduser("~/Library/Python/3.12/bin/glyph-audit"),
+    ):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return [candidate]
+
+    exe = sys.executable or ""
+    exe_base = os.path.basename(exe).lower()
+    is_python = exe_base.startswith("python") and ".app/" not in exe
+    if is_python:
+        return [exe, "-m", "GlyphAudit"]
+
+    raise RuntimeError(
+        "Couldn't locate `glyph-audit` from Glyphs.app. "
+        "Install with `pip install docrepair-glyph-audit`, then make sure "
+        "the install dir is in your shell PATH (~/.zshrc or ~/.bash_profile). "
+        f"Tried: PATH, login shell lookup, common install locations, and "
+        f"sys.executable ({exe!r})."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +361,7 @@ class GlyphProofPanel:
         # can drag it taller if they want to see more scrollback.
         W, H = 660, 340
         self.w = vanilla.FloatingWindow(
-            (W, H), "Glyph Proof",
+            (W, H), "Make Proof",
             autosaveName="GlyphProofPanel", minSize=(560, 280),
         )
         y = 12
