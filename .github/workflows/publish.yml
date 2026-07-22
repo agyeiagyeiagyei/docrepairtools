@@ -5,7 +5,7 @@ name: Publish to PyPI
 # flow — no long-lived API token in the repo. To enable:
 #
 #   1. On PyPI: project settings → publishing → "Add a new publisher"
-#      with owner=agyeiagyeiagyei, repo=GlyphAudit, workflow=publish.yml,
+#      with owner=agyeiagyeiagyei, repo=docrepairtools, workflow=publish.yml,
 #      environment=pypi
 #   2. In this repo: Settings → Environments → "New environment" named
 #      `pypi`. Optionally add required reviewers for an approval gate.

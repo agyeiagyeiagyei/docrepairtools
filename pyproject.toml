@@ -62,11 +62,11 @@ all    = [
 glyph-audit = "GlyphAudit.cli:main"
 
 [project.urls]
-Homepage      = "https://github.com/agyeiagyeiagyei/GlyphAudit"
-Repository    = "https://github.com/agyeiagyeiagyei/GlyphAudit"
-Issues        = "https://github.com/agyeiagyeiagyei/GlyphAudit/issues"
-Documentation = "https://github.com/agyeiagyeiagyei/GlyphAudit#readme"
-Changelog     = "https://github.com/agyeiagyeiagyei/GlyphAudit/releases"
+Homepage      = "https://github.com/agyeiagyeiagyei/docrepairtools"
+Repository    = "https://github.com/agyeiagyeiagyei/docrepairtools"
+Issues        = "https://github.com/agyeiagyeiagyei/docrepairtools/issues"
+Documentation = "https://github.com/agyeiagyeiagyei/docrepairtools#readme"
+Changelog     = "https://github.com/agyeiagyeiagyei/docrepairtools/releases"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

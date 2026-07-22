@@ -7,7 +7,7 @@ GlyphAudit publishes via [PyPI Trusted Publishers](https://docs.pypi.org/trusted
 1. **PyPI side** — at <https://pypi.org/manage/account/publishing/> click *Add a new publisher* and fill in:
    - PyPI project name: `docrepair-glyph-audit`
    - Owner: `agyeiagyeiagyei`
-   - Repository: `GlyphAudit`
+   - Repository: `docrepairtools`
    - Workflow filename: `publish.yml`
    - Environment name: `pypi`
 2. **GitHub side** — in this repo's Settings → Environments, create one named `pypi`. Add yourself as a required reviewer if you want an approval gate before every upload.
