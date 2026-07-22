@@ -69,7 +69,7 @@ def _resolve_config(config_arg: Optional[str]):
         print(
             "FAIL: no glyph-audit.toml found. Create one at your project root, "
             "or pass --config PATH.\n"
-            "See https://github.com/agyeiagyeiagyei/GlyphAudit#proof for the schema.",
+            "See https://github.com/agyeiagyeiagyei/docrepairtools#proof for the schema.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -123,7 +123,7 @@ def cmd_build(args) -> int:
     if _shutil.which("fontc") is None:
         print(
             "FAIL: `fontc` not found on PATH.\n"
-            "  Install with:  pip install \"docrepair-glyph-audit[proof]\"\n"
+            "  Install with:  pip install \"docrepair-tools[proof]\"\n"
             "  Or directly:   pip install fontc",
             file=sys.stderr,
         )

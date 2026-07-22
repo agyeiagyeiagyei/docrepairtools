@@ -17,7 +17,7 @@ subprocess cleanly.
 
 Install
 -------
-    pip install docrepair-glyph-audit
+    pip install docrepair-tools
     glyph-audit proof panel install
 """
 
@@ -161,7 +161,7 @@ def find_glyph_audit_cli() -> list:
 
     raise RuntimeError(
         "Couldn't locate `glyph-audit` from Glyphs.app. "
-        "Install with `pip install docrepair-glyph-audit`, then make sure "
+        "Install with `pip install docrepair-tools`, then make sure "
         "the install dir is in your shell PATH (~/.zshrc or ~/.bash_profile). "
         f"Tried: PATH, login shell lookup, common install locations, and "
         f"sys.executable ({exe!r})."

@@ -3,10 +3,11 @@ requires      = ["setuptools>=65", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-# Distribution name is `docrepair-glyph-audit` on PyPI; the CLI entry
-# point (`glyph-audit`) and top-level Python module (`GlyphAudit`) are
-# kept short so existing code, scripts, and docs don't need renaming.
-name            = "docrepair-glyph-audit"
+# PyPI distribution: `docrepair-tools`. The console script stays
+# `glyph-audit` and the import package stays `GlyphAudit` — only the
+# distribution name is the umbrella brand, so existing imports and
+# `glyph-audit ...` commands are unchanged.
+name            = "docrepair-tools"
 version         = "0.1.0"
 description     = "DocRepair tools: tiered coverage/width audit + live proofing pipeline for building metrics-compatible fonts (Google Fonts docrepair project)."
 readme          = { file = "README.md", content-type = "text/markdown" }

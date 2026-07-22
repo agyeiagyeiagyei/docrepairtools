@@ -25,7 +25,7 @@ Toggle: run the menu item again to close.
 
 Install
 -------
-    pip install docrepair-glyph-audit
+    pip install docrepair-tools
     glyph-audit proof panel install
 """
 

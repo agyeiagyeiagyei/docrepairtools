@@ -5,7 +5,7 @@ GlyphAudit publishes via [PyPI Trusted Publishers](https://docs.pypi.org/trusted
 ## One-time PyPI + repo setup
 
 1. **PyPI side** — at <https://pypi.org/manage/account/publishing/> click *Add a new publisher* and fill in:
-   - PyPI project name: `docrepair-glyph-audit`
+   - PyPI project name: `docrepair-tools`
    - Owner: `agyeiagyeiagyei`
    - Repository: `docrepairtools`
    - Workflow filename: `publish.yml`
@@ -33,7 +33,7 @@ GlyphAudit publishes via [PyPI Trusted Publishers](https://docs.pypi.org/trusted
 
 3. The `Publish to PyPI` workflow runs. The build job validates that the tag matches `pyproject.toml`'s version, builds the sdist + wheel, and runs `twine check --strict`. If that passes, the publish job uploads via OIDC.
 
-4. Verify on PyPI: <https://pypi.org/p/docrepair-glyph-audit>.
+4. Verify on PyPI: <https://pypi.org/p/docrepair-tools>.
 
 ## Dry-run / release candidates
 
@@ -62,7 +62,7 @@ python -m build
 twine check --strict dist/*
 # Install the wheel into a clean venv and confirm the CLI works:
 python -m venv /tmp/glyphaudit-smoke && \
-  /tmp/glyphaudit-smoke/bin/pip install dist/docrepair_glyph_audit-*.whl && \
+  /tmp/glyphaudit-smoke/bin/pip install dist/docrepair_tools-*.whl && \
   /tmp/glyphaudit-smoke/bin/glyph-audit --help
 # (console script stays `glyph-audit`; only the distribution name is namespaced)
 ```

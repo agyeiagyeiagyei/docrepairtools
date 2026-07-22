@@ -14,18 +14,18 @@ Ships two complementary surfaces:
 
   ![Width Audit panel](docs/screenshots/width-audit-panel.png)
 
-Both are installed by `pip install docrepair-glyph-audit[proof]`; the submenu then installs via `glyph-audit proof panel install`.
+Both are installed by `pip install docrepair-tools[proof]`; the submenu then installs via `glyph-audit proof panel install`.
 
 ## Install
 
 From PyPI:
 
 ```bash
-pip install docrepair-glyph-audit               # core (CLI only)
-pip install "docrepair-glyph-audit[glyphs]"     # + Glyphs source support
-pip install "docrepair-glyph-audit[proof]"      # + `glyph-audit proof serve` extras
-pip install "docrepair-glyph-audit[ai]"         # + Claude / OpenAI / Gemini AI summaries
-pip install "docrepair-glyph-audit[all]"        # everything
+pip install docrepair-tools               # core (CLI only)
+pip install "docrepair-tools[glyphs]"     # + Glyphs source support
+pip install "docrepair-tools[proof]"      # + `glyph-audit proof serve` extras
+pip install "docrepair-tools[ai]"         # + Claude / OpenAI / Gemini AI summaries
+pip install "docrepair-tools[all]"        # everything
 
 # Note: the console script + Python module are still `glyph-audit` /
 # `GlyphAudit` — only the PyPI distribution name is namespaced.

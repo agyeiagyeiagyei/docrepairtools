@@ -1,10 +1,10 @@
-# Testing plan — docrepair-glyph-audit
+# Testing plan — docrepair-tools
 
 Living document describing how this package is tested before releases. Six
 layers, cheapest first — pre-commit / CI can gate on L1–L4; L5 is a manual
 checklist for humans; L6 is optional deep coverage before a PyPI publish.
 
-Distribution: `docrepair-glyph-audit`.
+Distribution: `docrepair-tools`.
 Console script + Python module: `glyph-audit` / `GlyphAudit`.
 
 ---
@@ -36,7 +36,7 @@ different shape.
 Run: `pytest tests/proof/test_build_integration.py`
 
 Requires `fontc` on PATH — the whole file skips cleanly when it isn't.
-`pip install docrepair-glyph-audit[proof]` pulls it in.
+`pip install docrepair-tools[proof]` pulls it in.
 
 | Test | Assertion |
 |---|---|
