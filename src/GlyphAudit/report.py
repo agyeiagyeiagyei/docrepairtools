@@ -8,13 +8,8 @@ from .comparator import ComparisonResult, CodepointRow, VariantRow, InternalRow
 
 
 def write_markdown(results: Iterable[ComparisonResult], path: str,
-                   title: str = "Glyph Audit Report",
-                   ai_summary: str | None = None,
-                   ai_provider: str | None = None) -> None:
+                   title: str = "Glyph Audit Report") -> None:
     lines: list[str] = [f"# {title}", ""]
-
-    if ai_summary is not None:
-        lines += _ai_summary_section(ai_summary, ai_provider)
 
     results_list = list(results)
     lines += _summary(results_list)
@@ -24,20 +19,6 @@ def write_markdown(results: Iterable[ComparisonResult], path: str,
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-
-
-# ---------------------------------------------------------------------------
-
-def _ai_summary_section(ai_summary: str, ai_provider: str | None) -> list[str]:
-    heading = "## AI Health Check"
-    if ai_provider:
-        heading = f"## AI Health Check ({ai_provider})"
-    return [
-        heading,
-        "",
-        ai_summary.rstrip(),
-        "",
-    ]
 
 
 # ---------------------------------------------------------------------------

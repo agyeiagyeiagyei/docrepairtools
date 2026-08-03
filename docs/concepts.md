@@ -42,5 +42,3 @@ Within Tier 1 and Tier 2, every row is tagged:
 ## Reading the report
 
 Each target/reference pairing produces one section. Each section starts with counts, then lists mismatches sorted by severity (largest delta first). Missing-in-reference lists are grouped by Unicode block so the scope of the gap is visible at a glance. Tier 3 entries are bucketed by note so component / ligature noise stays separated from real bugs (e.g. variants whose base glyph is missing).
-
-If `--ai` was used, an AI-written summary appears at the top of the report calling out the most actionable anomalies in plain English. See [ai-summary.md](ai-summary.md).

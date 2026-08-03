@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- **Removed the AI summary feature** (`--ai`, `[providers.*]`, the
+  `claude`/`openai`/`gemini`/`ai` extras). The `all` extra is now just
+  glyphs + proof.
+- README images now use absolute URLs and render on the PyPI project
+  page (they were broken there in 0.2.0).
+
 ## 0.2.0
 
 New tools, a renamed Glyphs menu, and a docs overhaul.

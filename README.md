@@ -42,7 +42,6 @@ From PyPI:
 pip install docrepair-tools               # core (CLI only)
 pip install "docrepair-tools[glyphs]"     # + Glyphs source support
 pip install "docrepair-tools[proof]"      # + `glyph-audit proof serve` extras
-pip install "docrepair-tools[ai]"         # + Claude / OpenAI / Gemini AI summaries
 pip install "docrepair-tools[all]"        # everything
 
 # Note: the console script + Python module are still `glyph-audit` /
@@ -129,7 +128,7 @@ Three tiers per target/reference pair:
 - **Tier 2** — every variant glyph (`a.smcp`, `I.ss01`, …) paired by `(codepoint, feature)`.
 - **Tier 3** — internal helpers (components, ligature parts), listed for completeness.
 
-Mismatches are sorted by severity. With `--ai claude` (or `openai` / `gemini`), an AI-written summary is prepended to the top calling out anomalies in plain English.
+Mismatches are sorted by severity.
 
 More detail → [docs/concepts.md](docs/concepts.md).
 
@@ -165,14 +164,12 @@ Then in Glyphs: hold Option + click the Script menu → Reload Scripts, and the 
 - [docs/cli.md](docs/cli.md) — full flag reference, exit codes, and recipes
 - [docs/configuration.md](docs/configuration.md) — config file schema, all five reference forms (static, VF, system, Glyphs source, Google Fonts)
 - [docs/concepts.md](docs/concepts.md) — what each tier covers, how rows are tagged, how to read the report
-- [docs/ai-summary.md](docs/ai-summary.md) — `--ai` setup, custom prompts, privacy notes
 - [examples/glyphs/README.md](examples/glyphs/README.md) — Glyphs.app live-audit panel setup and usage
 
 ## Limitations
 
 - Tier 2 matches `SingleSubst` GSUB lookups only — `MultipleSubst` / `LigatureSubst` / contextual lookups don't pair on the reference side.
 - Sidebearings (LSB / RSB), kerning, anchors, and outline shapes are not compared. Only advance widths.
-- `--ai` sends a summary of mismatch data (glyph names, codepoints, widths — no outlines) to the chosen LLM provider. Don't enable it on confidential work.
 
 ## Licence
 

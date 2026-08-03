@@ -18,8 +18,6 @@ The `glyph-audit` console script and `python -m GlyphAudit` are equivalent.
 | `--no-normalize-upm` | off | Compare raw advances instead of per-1000-UPM-normalised values. |
 | `--title TEXT` | `"Glyph Audit Report"` | Top-level report heading. |
 | `--filter NAME` | `all` | Restrict the target font to glyphs marked with a Glyphs colour. Only effective for `.glyphs` / `.glyphspackage` target sources; ignored for TTFs. |
-| `--ai PROVIDER` | off | Add an AI-written health-check summary at the top of the report. Provider is one of `claude`, `openai`, `gemini`. See [ai-summary.md](ai-summary.md). |
-| `--prompt PATH` | bundled default | Custom prompt template for the AI summary. |
 | `--config PATH` | `~/.glyph-audit/config.toml` | Override config file location. |
 
 ## Filter values
@@ -146,15 +144,12 @@ glyph-audit --target sources/MyTypeface.glyphspackage \
             --pair Bold-vs-system="Helvetica Bold-system"
 ```
 
-### Yellow-only filter, with AI summary
+### Yellow-only filter, config pairs
 
-Assuming `[providers.claude]` and `[instances.*]` are set up in config:
+Assuming `[instances.*]` and `filter = "yellow"` are set up in config:
 
 ```bash
-glyph-audit --target sources/MyTypeface.glyphspackage \
-            --filter yellow \
-            --ai claude \
-            --from-config
+glyph-audit --target sources/MyTypeface.glyphspackage --from-config
 ```
 
 ## Recipes
@@ -200,7 +195,7 @@ Working on multiple typefaces? Drop a `.glyph-audit.toml` alongside the source a
 glyph-audit --target sources/MyTypeface.glyphspackage --config .glyph-audit.toml
 ```
 
-The per-project file accepts the same `[defaults]` / `[instances.*]` / `[providers.*]` sections. Just don't commit it if it contains API keys.
+The per-project file accepts the same `[defaults]` / `[instances.*]` sections.
 
 ## Precedence
 

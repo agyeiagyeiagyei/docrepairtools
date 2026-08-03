@@ -28,7 +28,7 @@ from typing import Optional
 
 # Re-use the AI subpackage's defaults so there's one source of truth for
 # the config file path.
-from .ai.config import DEFAULT_CONFIG_PATH, ConfigError
+from .defaults import DEFAULT_CONFIG_PATH, ConfigError
 
 
 @dataclass

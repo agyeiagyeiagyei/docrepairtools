@@ -45,25 +45,25 @@ commands never had to change through the renames.
 
 ```
 docrepairtools/
-├── pyproject.toml              # dist=docrepair-tools, extras: glyphs/proof/ai/all
+├── pyproject.toml              # dist=docrepair-tools, extras: glyphs/proof/all
 ├── README.md                   # user-facing intro (has the two screenshots)
 ├── TESTING.md                  # 7-layer test plan (L1–L7)
 ├── docs/
 │   ├── HANDOVER.md             # ← this file
 │   ├── release.md              # PyPI publish + trusted-publisher setup
 │   ├── configuration.md        # ~/.glyph-audit/config.toml schema
-│   ├── cli.md, concepts.md, ai-summary.md
-│   └── screenshots/            # placeholder README only — proof-web.png and
-│                               # width-audit-panel.png (README refs) still to be captured
+│   ├── cli.md, concepts.md
+│   └── screenshots/            # README images (proof web view + all four panels)
 ├── .github/workflows/publish.yml  # tag-driven build+publish (builds webapp bundle first)
-├── tests/proof/                # 131 tests
+├── tests/proof/                # 190 tests
 └── src/GlyphAudit/
     ├── cli.py / cli_proof.py   # argparse: `audit` (legacy default) + `proof` subtree
     ├── model.py                # FontView, COLOR_FILTERS, feature-suffix parsing
     ├── comparator.py           # TieredComparator (T1 codepoint / T2 variant / T3 internal)
     ├── loaders.py              # TTF / Glyphs-source loaders (system-font path dormant)
     ├── report.py, defaults.py, instances.py
-    ├── ai/                     # optional --ai summaries (Claude/OpenAI/Gemini)
+    ├── coverage.py             # reference→target gap analysis, feature matching, GSUB→.fea
+    ├── slant.py / extrema.py   # shear math + extrema engine for the Slant Glyphs panel
     └── proof/                  # ── proofing subsystem ──
         ├── config.py           # glyph-audit.toml schema ([proof], [references])
         ├── build.py            # fontc subset build; the engine (see §4)

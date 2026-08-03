@@ -6,10 +6,9 @@
 # location with `--config PATH`.  API keys live here; treat it like any
 # other secrets file (don't commit it to a public repo).
 #
-# Three optional sections:
+# Two optional sections:
 #   [defaults]          CLI flag defaults — skip retyping common flags
 #   [instances.NAME]    Target-master ↔ reference map
-#   [providers.NAME]    Claude / OpenAI / Gemini API keys for --ai
 #
 # Anything you set in [defaults] is overridden by an explicit CLI flag.
 # Anything you set in [instances.*] is consumed when you pass
@@ -109,35 +108,6 @@
 #
 #    Tip: for option (a)/(b), `gftools download Inter` (from the gftools
 #    pip package) automates the download into ~/Library/Fonts on macOS.
-
-
-# ---------------------------------------------------------------------
-# [providers.NAME] — AI summary keys
-# ---------------------------------------------------------------------
-#
-# Only fill in the provider you'll actually use (--ai claude / openai /
-# gemini). Missing sections fall back to environment variables:
-#   ANTHROPIC_API_KEY  /  OPENAI_API_KEY  /  GEMINI_API_KEY
-#
-# Required SDKs are optional pip extras:
-#   pip install ".[claude]"     # for --ai claude
-#   pip install ".[openai]"     # for --ai openai
-#   pip install ".[gemini]"     # for --ai gemini
-#   pip install ".[ai]"         # all three
-#
-# `model` is optional — defaults are baked into the tool.
-
-# [providers.claude]
-# api_key = "sk-ant-REPLACE-ME"
-# model   = "claude-sonnet-4-6"
-
-# [providers.openai]
-# api_key = "sk-REPLACE-ME"
-# model   = "gpt-4o-mini"
-
-# [providers.gemini]
-# api_key = "AIza-REPLACE-ME"
-# model   = "gemini-2.0-flash"
 
 
 # =====================================================================

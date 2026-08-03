@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 # distribution name is the umbrella brand, so existing imports and
 # `glyph-audit ...` commands are unchanged.
 name            = "docrepair-tools"
-version         = "0.2.0"
+version         = "0.2.1"
 description     = "DocRepair tools: tiered coverage/width audit + live proofing pipeline for building metrics-compatible fonts (Google Fonts docrepair project)."
 readme          = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
@@ -42,10 +42,6 @@ dependencies = [
 
 [project.optional-dependencies]
 glyphs = ["glyphsLib>=6.0"]
-claude = ["anthropic>=0.30"]
-openai = ["openai>=1.0"]
-gemini = ["google-generativeai>=0.5"]
-ai     = ["anthropic>=0.30", "openai>=1.0", "google-generativeai>=0.5"]
 # `proof` bundles the extras `glyph-audit proof …` subcommands need to run
 # the full pipeline: `fontc` for compilation, `watchdog` for --watch, and
 # `glyphsLib` so the source-side FontView is available to the panel.
@@ -54,9 +50,6 @@ all    = [
     "glyphsLib>=6.0",
     "watchdog>=3.0",
     "fontc>=0.1",
-    "anthropic>=0.30",
-    "openai>=1.0",
-    "google-generativeai>=0.5",
 ]
 
 [project.scripts]
@@ -86,7 +79,6 @@ exclude = ["GlyphAudit.proof.webapp.node_modules*",
 
 [tool.setuptools.package-data]
 GlyphAudit = [
-    "prompts/*.md",
     "examples/*.example",
     "examples/*.toml",
 ]

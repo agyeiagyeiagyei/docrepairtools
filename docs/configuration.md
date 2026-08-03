@@ -10,9 +10,8 @@ Override location with `--config PATH`. The file holds API keys; treat it like a
 |---|---|
 | `[defaults]` | CLI flag defaults. Skip retyping common flags. Any explicit CLI flag overrides values here. |
 | `[instances.NAME]` | Reusable target-master ↔ reference map. Consumed when `--from-config` is set (or `from_config = true` under `[defaults]`). |
-| `[providers.NAME]` | Claude / OpenAI / Gemini API keys for the `--ai` feature. |
 
-All three are optional. Set only what you use.
+Both are optional. Set only what you use.
 
 ## `[defaults]`
 
@@ -85,26 +84,6 @@ The `ref` value can be any of:
    ```
    `gftools download Inter` (from the `gftools` pip package) automates the download into `~/Library/Fonts` on macOS.
 
-## `[providers.NAME]`
-
-Only fill in the provider you'll actually use. Missing sections fall back to environment variables: `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`.
-
-```toml
-[providers.claude]
-api_key = "sk-ant-..."
-# model   = "claude-sonnet-4-6"     # optional, sensible default if omitted
-
-[providers.openai]
-api_key = "sk-..."
-# model   = "gpt-4o-mini"
-
-[providers.gemini]
-api_key = "AIza..."
-# model   = "gemini-2.0-flash"
-```
-
-See [ai-summary.md](ai-summary.md) for the rest of the AI feature.
-
 ## Project-local config
 
 Pass `--config PATH` to point at a project-local file:
@@ -113,4 +92,4 @@ Pass `--config PATH` to point at a project-local file:
 glyph-audit --target sources/MyTypeface.glyphspackage --config .glyph-audit.toml
 ```
 
-If you commit project-local configs, **add the file to `.gitignore`** — it holds plaintext API keys. The user-level default at `~/.glyph-audit/config.toml` sits outside any repo, so it can't be accidentally committed.
+The user-level default at `~/.glyph-audit/config.toml` sits outside any repo, so it can't be accidentally committed.

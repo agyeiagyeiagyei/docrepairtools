@@ -47,9 +47,8 @@ from typing import Optional
 
 from .loaders import load_font
 from .comparator import TieredComparator
-from .defaults import load_defaults
+from .defaults import load_defaults, ConfigError
 from .instances import load_instances, InstanceSpec
-from .ai.config import ConfigError
 from .model import COLOR_FILTERS, GLYPHS_COLOR_NAMES
 from .report import write_markdown
 
@@ -114,24 +113,10 @@ def _build_audit_parser(audit: argparse.ArgumentParser) -> None:
              ".glyphs / .glyphspackage target sources; ignored for TTFs.",
     )
     audit.add_argument(
-        "--ai",
-        choices=["claude", "openai", "gemini"],
-        default=None,
-        help="Add an AI-written health-check summary at the top of the report "
-             "using the chosen provider. Requires the provider's SDK and an "
-             "API key (in ~/.glyph-audit/config.toml or env vars).",
-    )
-    audit.add_argument(
-        "--prompt",
-        default=None,
-        help="Path to a custom prompt template. Defaults to the bundled "
-             "prompts/health_check.md inside the package.",
-    )
-    audit.add_argument(
         "--config",
         default=None,
         help="Path to config TOML (default: ~/.glyph-audit/config.toml). "
-             "Holds API keys, [instances.NAME] map, and [defaults] section. "
+             "Holds [instances.NAME] map and [defaults] section. "
              "See examples/config.toml.example for the schema.",
     )
 
@@ -160,8 +145,6 @@ def _run_audit(args, parser) -> int:
     args.tolerance         = resolved(args.tolerance,         "tolerance",        HARDCODED["tolerance"])
     args.title             = resolved(args.title,             "title",            HARDCODED["title"])
     args.filter            = resolved(args.filter,            "filter",           HARDCODED["filter"])
-    args.ai                = resolved(args.ai,                "ai",               None)
-    args.prompt            = resolved(args.prompt,            "prompt",           None)
     args.no_normalize_upm  = bool(resolved(args.no_normalize_upm, "no_normalize_upm", False))
     args.from_config       = bool(resolved(args.from_config,  "from_config",      False))
 
@@ -283,33 +266,7 @@ def _run_audit(args, parser) -> int:
             file=sys.stderr,
         )
 
-    ai_summary_text: Optional[str] = None
-    ai_provider_label: Optional[str] = None
-    if args.ai:
-        # Lazy import — keeps the AI subpackage off the import path for users
-        # who never use --ai.
-        from .ai import summarize, AIError
-        ai_provider_label = args.ai
-        try:
-            print(f"Requesting AI summary from {args.ai} …", file=sys.stderr)
-            ai_summary_text = summarize(
-                results, args.ai,
-                config_path=args.config,
-                prompt_path=args.prompt,
-            )
-            print("AI summary received.", file=sys.stderr)
-        except AIError as e:
-            ai_summary_text = (
-                f"_AI summary unavailable: {e}_"
-            )
-            print(f"  WARNING: AI summary failed — {e}", file=sys.stderr)
-
-    write_markdown(
-        results, args.output,
-        title=args.title,
-        ai_summary=ai_summary_text,
-        ai_provider=ai_provider_label,
-    )
+    write_markdown(results, args.output, title=args.title)
     print(f"Wrote {args.output}", file=sys.stderr)
     return 1 if any_mismatch else 0
 

@@ -8,8 +8,6 @@ Lets users skip frequently-used CLI flags by setting them once in
     filter    = "ready"
     tolerance = 1.0
     title     = "MyTypeface Coverage"
-    ai        = "claude"
-    prompt    = "~/.glyph-audit/prompts/strict.md"
     no_normalize_upm = false
     from_config = true
 
@@ -23,7 +21,12 @@ import os
 import sys
 from typing import Any, Optional
 
-from .ai.config import DEFAULT_CONFIG_PATH, ConfigError
+
+DEFAULT_CONFIG_PATH = os.path.expanduser("~/.glyph-audit/config.toml")
+
+
+class ConfigError(Exception):
+    """Raised when configuration cannot be resolved."""
 
 
 # Recognised keys and their expected types. Keys not in this dict are
@@ -33,8 +36,6 @@ DEFAULT_KEYS: dict[str, type] = {
     "filter":           str,
     "tolerance":        (int, float),
     "title":            str,
-    "ai":               str,
-    "prompt":           str,
     "config":           str,    # rare but supported (could come from a wrapper)
     "no_normalize_upm": bool,
     "from_config":      bool,
