@@ -39,6 +39,25 @@ Within Tier 1 and Tier 2, every row is tagged:
 
 `missing-in-reference` is *not* an error — it usually means the target font's coverage extends beyond the reference's set, which is expected.
 
+## Coverage gaps (`glyph-audit coverage`)
+
+The audit walks target → reference; coverage walks the other way: **what does the reference cover that the target lacks?** — the question a document-replacement font must answer with "nothing", since any missing codepoint or GSUB-reachable variant renders with a fallback font in real documents.
+
+Two kinds of coverage are checked, in both directions:
+
+- **Codepoints** — the reference cmap minus the target cmap.
+- **Feature variants** — every variant reachable through the reference's GSUB (compiled GSUB for binaries, name suffixes for Glyphs sources).
+
+Every gap is classified, because the fix differs:
+
+| Status | Meaning | Fix |
+|---|---|---|
+| `absent` | Not in the target at all — fails the run (exit 1) | Draw/create the glyph |
+| `unencoded-in-target` | The glyph exists but has no Unicode value | Assign the codepoint |
+| `present, not feature-linked` | A variant glyph exists but isn't wired to the feature | Wire up the feature |
+
+The report adds a **feature matching table** (per feature tag: reference rules vs rules the target can serve — `full` / `partial` / `missing`) and a **yes/no matrix** over the union of both fonts. `--emit-features` writes the reference's GSUB as `.fea` files rewritten into target glyph names; rules referencing missing glyphs are skipped.
+
 ## Reading the report
 
 Each target/reference pairing produces one section. Each section starts with counts, then lists mismatches sorted by severity (largest delta first). Missing-in-reference lists are grouped by Unicode block so the scope of the gap is visible at a glance. Tier 3 entries are bucketed by note so component / ligature noise stays separated from real bugs (e.g. variants whose base glyph is missing).
