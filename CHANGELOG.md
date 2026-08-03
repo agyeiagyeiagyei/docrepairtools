@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- Relicensed the project MIT → **Apache 2.0** (LICENSE, package
+  classifier, README). No code changes.
+
 ## 0.2.1
 
 - **Removed the AI summary feature** (`--ai`, `[providers.*]`, the
