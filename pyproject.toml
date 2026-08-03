@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 # distribution name is the umbrella brand, so existing imports and
 # `glyph-audit ...` commands are unchanged.
 name            = "docrepair-tools"
-version         = "0.2.2"
+version         = "0.2.3"
 description     = "DocRepair tools: tiered coverage/width audit + live proofing pipeline for building metrics-compatible fonts (Google Fonts docrepair project)."
 readme          = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
@@ -23,7 +23,7 @@ classifiers     = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Topic :: Multimedia :: Graphics :: Editors :: Vector-Based",
     "Topic :: Text Processing :: Fonts",

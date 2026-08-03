@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Relicensed the project to **GPL-3.0** (supersedes the brief Apache 2.0
+  stint in 0.2.2). No code changes.
+
 ## 0.2.2
 
 - Relicensed the project MIT → **Apache 2.0** (LICENSE, package
