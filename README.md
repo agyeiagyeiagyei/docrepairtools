@@ -8,23 +8,23 @@ One submenu, **Script → DocRepair Tools**, after `pip install docrepair-tools[
 
 **Width Audit** — live advance-width mismatches against the reference, with an edit-view overlay of the reference outline.
 
-![Width Audit panel](docs/screenshots/width-audit-panel.png)
+![Width Audit panel](https://raw.githubusercontent.com/agyeiagyeiagyei/docrepairtools/main/docs/screenshots/width-audit-panel.png)
 
 **Slant Glyphs** — preview and tweak a slant across masters, fix extrema, then match reference widths.
 
-![Slant Glyphs panel](docs/screenshots/slant-panel.png)
+![Slant Glyphs panel](https://raw.githubusercontent.com/agyeiagyeiagyei/docrepairtools/main/docs/screenshots/slant-panel.png)
 
 **Coverage Check** — what's missing in your font or the reference, in a searchable list you can fix from.
 
-![Coverage panel](docs/screenshots/coverage-panel.png)
+![Coverage panel](https://raw.githubusercontent.com/agyeiagyeiagyei/docrepairtools/main/docs/screenshots/coverage-panel.png)
 
 **Proof Builder** — compile the proof subset and launch the browser compare.
 
-![Proof Builder panel](docs/screenshots/make-proof-panel.png)
+![Proof Builder panel](https://raw.githubusercontent.com/agyeiagyeiagyei/docrepairtools/main/docs/screenshots/make-proof-panel.png)
 
 ## In the browser
 
-![Proof web view](docs/screenshots/proof-web.png)
+![Proof web view](https://raw.githubusercontent.com/agyeiagyeiagyei/docrepairtools/main/docs/screenshots/proof-web.png)
 
 Your working font next to the reference — identical advances produce identical line-wrap, so divergence shows the moment it appears.
 
@@ -32,7 +32,7 @@ Your working font next to the reference — identical advances produce identical
 
 `glyph-audit` — tiered width/coverage audit report. `glyph-audit coverage` — missing codepoints and feature variants in both directions, feature matching, `.fea` export, exit-code gate. Details → [docs/cli.md](docs/cli.md).
 
-![Coverage report](docs/screenshots/coverage-report.png)
+![Coverage report](https://raw.githubusercontent.com/agyeiagyeiagyei/docrepairtools/main/docs/screenshots/coverage-report.png)
 
 ## Install
 
