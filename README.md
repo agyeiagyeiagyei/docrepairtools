@@ -173,4 +173,4 @@ Then in Glyphs: hold Option + click the Script menu → Reload Scripts, and the 
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).

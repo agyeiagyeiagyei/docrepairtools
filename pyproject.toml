@@ -23,7 +23,7 @@ classifiers     = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Topic :: Multimedia :: Graphics :: Editors :: Vector-Based",
     "Topic :: Text Processing :: Fonts",
