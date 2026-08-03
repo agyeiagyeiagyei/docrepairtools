@@ -12,7 +12,7 @@ GlyphAudit publishes via [PyPI Trusted Publishers](https://docs.pypi.org/trusted
    - Environment name: `pypi`
 2. **GitHub side** — in this repo's Settings → Environments, create one named `pypi`. Add yourself as a required reviewer if you want an approval gate before every upload.
 
-(The first publish on PyPI needs a manual `twine upload dist/*` since trusted publishers can only be attached to an existing project. See *Bootstrap* below.)
+If the project doesn't exist on PyPI yet, register it as a **pending publisher** instead (same page) — the first OIDC publish then *creates* the project. That's how 0.2.0 shipped: no manual `twine upload` is ever needed once the pending publisher is in place.
 
 ## Cutting a release
 
@@ -39,18 +39,15 @@ GlyphAudit publishes via [PyPI Trusted Publishers](https://docs.pypi.org/trusted
 
 Tags with a dash suffix (e.g. `v0.2.0-rc1`, `v0.2.0-beta.2`) build and validate but **do not upload** — the publish job's `if: ${{ !contains(github.ref, '-') }}` guard skips them. Useful for testing the workflow without polluting the PyPI history.
 
-## Bootstrap (first ever release)
+## Bootstrap note
 
-Trusted publishers can only be configured against an existing PyPI project, so the very first upload has to use an API token:
-
-```bash
-python -m pip install --upgrade build twine
-python -m build
-twine check --strict dist/*
-twine upload dist/*   # asks for username "__token__" and the PyPI token
-```
-
-After that first upload, the project exists on PyPI; configure the trusted publisher per *One-time PyPI + repo setup* and every subsequent release goes through Actions.
+Earlier revisions of this doc claimed the first upload had to be a manual
+`twine upload` with an API token. That was never actually done — 0.1.0 was
+tagged but never uploaded. The working bootstrap is the **pending
+publisher** route above: register it once on PyPI, and the first tagged
+release creates the project via OIDC. The manual `twine upload dist/*`
+flow remains available as a fallback if OIDC is ever broken (see *Local
+sanity check* for building the dists).
 
 ## Local sanity check
 
