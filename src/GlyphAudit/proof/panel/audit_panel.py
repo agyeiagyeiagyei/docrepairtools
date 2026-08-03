@@ -1,4 +1,4 @@
-#MenuTitle: Glyph Audit
+#MenuTitle: Width Audit
 # -*- coding: utf-8 -*-
 """Glyphs.app panel for advance-width auditing against a reference font.
 
@@ -14,6 +14,8 @@ tall one. This one:
     inconsistent OT-feature coverage; pin the exact TTF you care about.
   - Live update via Glyphs UPDATEINTERFACE callback — the table follows
     your edits keystroke-by-keystroke.
+  - Active-glyph marker: the row for the glyph under the edit-view
+    cursor is flagged with ▶ so you can spot its delta at a glance.
   - Advance-width delta column (Δ). Sidebearing (LSB/RSB) columns are
     temporarily out — the current RSB math (advance − LSB − glyf bbox
     width) diverges from Glyphs's own `layer.RSB` on glyphs with
@@ -60,6 +62,7 @@ for _mod in [m for m in sys.modules if m == "GlyphAudit" or m.startswith("GlyphA
     del sys.modules[_mod]
 
 import vanilla
+from typing import Optional
 from GlyphsApp import Glyphs, UPDATEINTERFACE, DRAWBACKGROUND
 
 from GlyphAudit.comparator import TieredComparator
@@ -145,9 +148,19 @@ class WidthAuditPanel:
     def _build_ui(self) -> None:
         W, H = 640, 560
         self.w = vanilla.FloatingWindow(
-            (W, H), "Glyph Audit",
+            (W, H), "Width Audit",
             autosaveName="WidthAuditPanel", minSize=(520, 380),
         )
+        # Never let macOS window restoration resurrect the panel at launch:
+        # with the default restorable=YES, quitting Glyphs with the panel
+        # open archives the window and relaunch restores it — bypassing the
+        # toggle registry (which starts empty on `builtins`), so the menu
+        # would then stack a second window on top of the ghost. The panel
+        # must exist only when toggled on from the menu. autosaveName is
+        # unaffected: it persists frame position/size only, not visibility.
+        _ns = self.w.getNSWindow()
+        _ns.setRestorable_(False)
+        _ns.disableSnapshotRestoration()
         y = 12
 
         # Header — active document context.
@@ -226,6 +239,7 @@ class WidthAuditPanel:
         # on FontView stay populated so we can put the columns back
         # once the bearing math is reconciled with Glyphs's definition.
         cols = [
+            dict(title="",      key="active", width=16,  editable=False),
             dict(title="Glyph",  key="name",   width=170, editable=False),
             dict(title="Tier",   key="tier",   width=40,  editable=False),
             dict(title="Target", key="target", width=64,  editable=False),
@@ -805,6 +819,25 @@ class WidthAuditPanel:
     def _refresh_cb(self, sender) -> None:
         self._refresh()
 
+    def _active_glyph_name(self) -> Optional[str]:
+        """Name of the glyph under the edit-view cursor, else None.
+
+        `currentTab.layers` is the tab's text as layers; `layersCursor`
+        indexes the one being edited. None when the focus is the Font
+        view (no edit tab) or the cursor is between characters.
+        """
+        try:
+            tab = self.font.currentTab if self.font is not None else None
+            if tab is None:
+                return None
+            layers = tab.layers
+            cursor = tab.layersCursor
+            if layers and 0 <= cursor < len(layers):
+                return getattr(layers[cursor].parent, "name", None)
+        except Exception:
+            pass
+        return None
+
     def _refresh(self) -> None:
         if self.font is None or Glyphs.font is not self.font:
             self.font = Glyphs.font
@@ -885,13 +918,15 @@ class WidthAuditPanel:
         )
 
         rows = []
+        active_name = self._active_glyph_name()
         for r in result.codepoint_rows:
             if r.status != "mismatch":
                 continue
             rows.append(self._row(r.target_name, "T1",
                                   r.target_advance, r.reference_advance,
                                   r.delta, target_view, ref_view,
-                                  ref_name=r.reference_name))
+                                  ref_name=r.reference_name,
+                                  active=(r.target_name == active_name)))
         for r in result.variant_rows:
             if r.status != "mismatch":
                 continue
@@ -899,7 +934,8 @@ class WidthAuditPanel:
                                   r.target_advance, r.reference_advance,
                                   r.delta, target_view, ref_view,
                                   real_name=r.target_name,
-                                  ref_name=r.reference_name))
+                                  ref_name=r.reference_name,
+                                  active=(r.target_name == active_name)))
 
         rows.sort(key=lambda r: abs(int(r["delta"] or 0)), reverse=True)
 
@@ -927,7 +963,7 @@ class WidthAuditPanel:
         self.w.list.set(rows)
 
     def _row(self, display_name, tier, target_adv, ref_adv, delta, view, ref_view,
-             *, real_name=None, ref_name=None):
+             *, real_name=None, ref_name=None, active=False):
         # `view` / `ref_view` / `ref_name` accepted for signature stability
         # while LSB/RSB columns are temporarily out — the sidebearings math
         # is unreconciled with Glyphs's own `layer.LSB` / `.RSB` (RSB via
@@ -944,6 +980,7 @@ class WidthAuditPanel:
             ref=str(ref_adv) if ref_adv is not None else "—",
             delta=f"{delta:+.0f}" if delta is not None else "",
             color=GLYPHS_COLOR_NAMES.get(color_idx, ""),
+            active="▶" if active else "",
             _name=gname,
         )
 

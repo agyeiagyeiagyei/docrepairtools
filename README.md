@@ -1,20 +1,38 @@
 # GlyphAudit — DocRepair Tools
 
-Part of the **DocRepair tools** for the Google Fonts docrepair project: building metrics-compatible replacement fonts that can stand in for an original document face without reflowing the documents that used it. The whole toolkit exists to answer one question fast, per glyph, per master: *does this typeset like the reference?*
+Tools for building **metrics-compatible replacement fonts** — same advances and coverage as the original document face, distinct outlines. The whole toolkit answers one question fast, per glyph, per master: *does this typeset like the reference?*
 
-Tiered audit of a target font against one or more references — by codepoint, OpenType feature variant, and unencoded internals. Designed for type designers working in Glyphs who need to **match-but-not-quite** an original: same advances and coverage, distinct outlines.
+## In Glyphs.app — the daily interface
 
-Ships two complementary surfaces:
+One submenu, **Script → DocRepair Tools**, after `pip install docrepair-tools[proof]` and `glyph-audit proof panel install`.
 
-- **`glyph-audit proof serve`** — a browser-based side-by-side proof view that renders your working font next to configured reference families. Watches your source for changes and hot-rebuilds.
+**Width Audit** — live advance-width mismatches against the reference, with an edit-view overlay of the reference outline.
 
-  ![Proof web view — Velarium vs Verdana](docs/screenshots/proof-web.png)
+![Width Audit panel](docs/screenshots/width-audit-panel.png)
 
-- **Glyphs.app panels** — installed as one **Script → DocRepair Tools** submenu with two entries: **Glyph Audit** (live advance-width mismatch table with per-master reference pins, plus an edit-view overlay drawing the reference outline, its nodes, and metric-delta bands behind your glyph) and **Make Proof** (colour-filtered proof compiler + launcher for the web view).
+**Slant Glyphs** — preview and tweak a slant across masters, fix extrema, then match reference widths.
 
-  ![Width Audit panel](docs/screenshots/width-audit-panel.png)
+![Slant Glyphs panel](docs/screenshots/slant-panel.png)
 
-Both are installed by `pip install docrepair-tools[proof]`; the submenu then installs via `glyph-audit proof panel install`.
+**Coverage Check** — what's missing in your font or the reference, in a searchable list you can fix from.
+
+![Coverage panel](docs/screenshots/coverage-panel.png)
+
+**Proof Builder** — compile the proof subset and launch the browser compare.
+
+![Proof Builder panel](docs/screenshots/make-proof-panel.png)
+
+## In the browser
+
+![Proof web view](docs/screenshots/proof-web.png)
+
+Your working font next to the reference — identical advances produce identical line-wrap, so divergence shows the moment it appears.
+
+## From the CLI — automation and CI
+
+`glyph-audit` — tiered width/coverage audit report. `glyph-audit coverage` — missing codepoints and feature variants in both directions, feature matching, `.fea` export, exit-code gate. Details → [docs/cli.md](docs/cli.md).
+
+![Coverage report](docs/screenshots/coverage-report.png)
 
 ## Install
 
@@ -88,7 +106,7 @@ audit:
 
 ```bash
 make audit                                                # default target
-make audit TARGET=sources/MyTypeface-working.glyphspackage # the working file
+make audit TARGET=sources/MyTypeface-Italic.glyphspackage # override the file
 ```
 
 The leading `-` lets `make` ignore `glyph-audit`'s non-zero exit when mismatches are found — that's the audit's normal "I found something" signal, not a build failure.
@@ -117,19 +135,19 @@ More detail → [docs/concepts.md](docs/concepts.md).
 
 ## Preview — side-by-side proof viewer
 
-A React+Vite app at [`preview/`](preview/) renders your work-in-progress font next to a reference in two synced editable panels. Type in the left (proof) panel; the right mirrors verbatim against whichever reference font you bundle, so identical advance widths produce identical line wraps — the moment they diverge, you can see exactly where.
+A React+Vite app (prebuilt and shipped inside the wheel) renders your work-in-progress font next to a reference in two synced editable panels. Type in the left (proof) panel; the right mirrors verbatim against whichever reference font you configure, so identical advance widths produce identical line wraps — the moment they diverge, you can see exactly where.
 
-It reads the same `[instances.*]` block in `~/.glyph-audit/config.toml` that the CLI uses, so once the audit is set up the preview needs no extra config:
+It's driven by a `glyph-audit.toml` at your project root (family name, source list, colour filter, `[references]`), then:
 
 ```bash
 # Build the proof font + manifests from your source:
-python preview/build.py --source sources/MyTypeface.glyphspackage
+glyph-audit proof build
 
-# Start the dev server (in another terminal):
-cd preview && npm install && npm run dev
+# Build + serve the web view with live rebuild on source changes:
+glyph-audit proof serve --watch
 ```
 
-The build script writes `preview/public/{proof-font.ttf, proof-config.json, available-{chars,features}.json}`; the React app polls those every 3 s, so a re-build (or `build.py --watch`) hot-reloads the panels without manual refresh. Setup, CLI reference, and licensing notes → [preview/README.md](preview/README.md).
+The build writes proof TTFs plus `proof-config.json`, `available-{chars,features}.json`, and per-reference width manifests into the output dir; the served app overlays those on the shipped web bundle. Flags and subcommands → [docs/cli.md](docs/cli.md#proof-subcommands).
 
 ## Live audit panel inside Glyphs.app
 
@@ -148,7 +166,6 @@ Then in Glyphs: hold Option + click the Script menu → Reload Scripts, and the 
 - [docs/configuration.md](docs/configuration.md) — config file schema, all five reference forms (static, VF, system, Glyphs source, Google Fonts)
 - [docs/concepts.md](docs/concepts.md) — what each tier covers, how rows are tagged, how to read the report
 - [docs/ai-summary.md](docs/ai-summary.md) — `--ai` setup, custom prompts, privacy notes
-- [preview/README.md](preview/README.md) — side-by-side proof viewer (React/Vite app) setup, CLI, and architecture
 - [examples/glyphs/README.md](examples/glyphs/README.md) — Glyphs.app live-audit panel setup and usage
 
 ## Limitations

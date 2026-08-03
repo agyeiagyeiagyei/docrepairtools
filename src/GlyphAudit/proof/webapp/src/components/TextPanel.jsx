@@ -49,6 +49,20 @@ const TextPanel = forwardRef(function TextPanel(
     },
   }))
 
+  // Paste plain text only. Chrome's contentEditable paste preserves the
+  // source's inline styles, and a pasted `font-family` on a child span beats
+  // the panel's own font — so pasting a specimen string from a web page (or
+  // out of the reference panel next door) silently swaps the proof panel to
+  // whatever font the text was copied from, and `syncToSystem` then mirrors
+  // that span into the reference panel too. Both panels end up rendering the
+  // same wrong face. Strip formatting on the way in; the panel's own controls
+  // are the only thing that should decide how this text is set.
+  const handlePaste = (e) => {
+    e.preventDefault()
+    const text = e.clipboardData?.getData('text/plain') ?? ''
+    if (text) document.execCommand('insertText', false, text)
+  }
+
   const sharedStyle = {
     fontFamily: `"${fontFamily}", sans-serif`,
     fontWeight,
@@ -65,6 +79,7 @@ const TextPanel = forwardRef(function TextPanel(
         className="editable"
         contentEditable={!readOnly}
         suppressContentEditableWarning
+        onPaste={handlePaste}
         style={{ ...sharedStyle, fontSize: headlineSize + 'px' }}
       >
         {defaultHeadline}
@@ -74,6 +89,7 @@ const TextPanel = forwardRef(function TextPanel(
         className="editable body"
         contentEditable={!readOnly}
         suppressContentEditableWarning
+        onPaste={handlePaste}
         style={{ ...sharedStyle, fontSize: bodySize + 'px' }}
       >
         {defaultBody}

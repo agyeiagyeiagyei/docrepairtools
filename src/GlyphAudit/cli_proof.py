@@ -270,13 +270,15 @@ def cmd_serve(args) -> int:
 
 _GLYPHS_SCRIPTS_DIR = Path.home() / "Library/Application Support/Glyphs 3/Scripts"
 
-# A folder inside Glyphs's Scripts dir renders as a SUBMENU — so the two
+# A folder inside Glyphs's Scripts dir renders as a SUBMENU — so the
 # tools install as one "DocRepair Tools" entry with dropdown items,
-# rather than two loose top-level scripts.
+# rather than loose top-level scripts.
 _MENU_DIR = _GLYPHS_SCRIPTS_DIR / "DocRepair Tools"
 _PANELS = (
-    ("Glyph Audit.py", "audit_panel.py"),
-    ("Make Proof.py", "proof_panel.py"),
+    ("Width Audit.py", "audit_panel.py"),
+    ("Proof Builder.py", "proof_panel.py"),
+    ("Slant Glyphs.py", "slant_panel.py"),
+    ("Coverage Check.py", "coverage_panel.py"),
 )
 
 # Superseded top-level symlinks from earlier generations of the installer.
@@ -288,11 +290,20 @@ _LEGACY_LINKS = (
     "Width Audit Panel.py",
 )
 
+# Superseded submenu entries from before the panel renames. Removed on
+# every install so the menu doesn't show both old and new names.
+_LEGACY_MENU_LINKS = (
+    "Glyph Audit.py",
+    "Make Proof.py",
+    "Coverage.py",
+)
+
 
 def cmd_panel_install(args) -> int:
     """Install the DocRepair Tools submenu into Glyphs 3's user-scripts
-    folder: Script → DocRepair Tools → {Glyph Audit, Make Proof}.
-    Replaces any existing links and removes superseded top-level ones.
+    folder: Script → DocRepair Tools → {Width Audit, Proof Builder, Slant
+    Glyphs, Coverage Check}. Replaces any existing links and removes
+    superseded ones (top-level and submenu).
     """
     from importlib import resources
 
@@ -318,6 +329,12 @@ def cmd_panel_install(args) -> int:
             stale.unlink()
             print(f"Removed superseded link: {stale.name}")
 
+    for legacy in _LEGACY_MENU_LINKS:
+        stale = _MENU_DIR / legacy
+        if stale.exists() or stale.is_symlink():
+            stale.unlink()
+            print(f"Removed superseded menu item: {stale.name}")
+
     for menu_name, filename in _PANELS:
         panel_ref = pkg_ref.joinpath(filename)
         with resources.as_file(panel_ref) as p:
@@ -333,7 +350,7 @@ def cmd_panel_install(args) -> int:
         print(f"Symlinked: {dest} → {src}")
 
     print("In Glyphs: hold Option and click Script → Reload Scripts (or relaunch).")
-    print("Menu: Script → DocRepair Tools → Glyph Audit · Make Proof")
+    print("Menu: Script → DocRepair Tools → Width Audit · Proof Builder · Slant Glyphs · Coverage Check")
     return 0
 
 

@@ -1,4 +1,4 @@
-#MenuTitle: Make Proof
+#MenuTitle: Proof Builder
 # -*- coding: utf-8 -*-
 """Glyphs.app panel for the `glyph-audit proof` browser view.
 
@@ -361,9 +361,15 @@ class GlyphProofPanel:
         # can drag it taller if they want to see more scrollback.
         W, H = 660, 340
         self.w = vanilla.FloatingWindow(
-            (W, H), "Make Proof",
+            (W, H), "Proof Builder",
             autosaveName="GlyphProofPanel", minSize=(560, 280),
         )
+        # Same reasoning as the audit panel: keep the window out of macOS
+        # session restoration so it only ever exists when toggled on from
+        # the menu (see audit_panel.py for the full rationale).
+        _ns = self.w.getNSWindow()
+        _ns.setRestorable_(False)
+        _ns.disableSnapshotRestoration()
         y = 12
 
         # Header — family + subtitle that names the scope explicitly.

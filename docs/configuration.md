@@ -1,6 +1,6 @@
 # Configuration
 
-The config file lives at `~/.glyph-audit/config.toml` by default. On first run with no `--target` / `--pair` and no existing config, the tool bootstraps this file from the bundled template — see [`examples/config.toml.example`](../src/GlyphAudit/examples/config.toml.example).
+The config file lives at `~/.glyph-audit/config.toml` by default. On first run with a `--target` but no `--pair` / `--from-config` and no existing config, the tool bootstraps this file from the bundled template — see [`examples/config.toml.example`](../src/GlyphAudit/examples/config.toml.example).
 
 Override location with `--config PATH`. The file holds API keys; treat it like any other secrets file.
 

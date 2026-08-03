@@ -137,6 +137,65 @@ runtime change. Copy this list into a PR/release note as you tick.
      carry sidebearing data; blank when either lacks it.
 8. Close the panel → `~/.glyph-audit/proof-panel-state.json` retained;
    next open restores the same colour selection.
+9. **Slant Glyphs panel** (Script → DocRepair Tools → Slant Glyphs):
+   - Reference dropdown defaults to "Auto (per-master config)" and lists
+     the same config pins + recent files as the Width Audit panel;
+     "Choose file…" adds a file and it appears under "Recent ·" in both
+     panels.
+   - The in-panel preview pane shows the slanted current glyph (blue)
+     over the reference glyph (red) with advance hairlines and orange dots
+     where new extremum nodes will be inserted; it updates live as you
+     edit Slant/Width/Height or change the selection, and it never
+     mutates the document.
+   - Select a few glyphs in Edit View → **Preview** → outlines shear by
+     tan(angle) around the chosen pivot; the pre-slant original appears in
+     the background layer (only when the background was empty).
+   - With "Fix extrema" on (default): after slanting a round glyph (/o,
+     /O), new nodes sit exactly on the post-slant left/right extremes and
+     the old pre-slant extremum nodes are gone; top/bottom extrema are
+     untouched. The segments around the new extrema stay smooth — no
+     stretched-handle bulge below/above the new node (curve-curve merges
+     use a least-squares fit; curve-to-line joins like arch-to-stem are
+     deliberately KEPT and reported as "kept (line joins)", since merging
+     them is what produces stem-long degenerate handles). Summary reports
+     `+N inserted, −M removed[, B balanced]`; nodes kept by the ~1-unit
+     shape gate are reported as "kept (shape gate)".
+   - With "Apply to all masters" + "Fix extrema" on: node counts stay
+     identical across masters for round glyphs; any glyph flagged "node
+     counts differ across masters" in the summary needs manual fixing
+     before interpolation.
+   - Change the angle → **Preview** again → transform re-applies from the
+     original (no compounding: previewing 10° then 10° again equals 10°,
+     not 20°).
+   - **Revert** → outlines and widths byte-identical to pre-preview state;
+     the panel-created background copy is cleared.
+   - **Apply** with "Match reference widths" on → each glyph's advance
+     matches the `[instances.<master>]` reference (cross-check a few in the
+     Width Audit panel: Δ = 0); glyphs missing from the ref are listed in
+     the summary and keep their width.
+   - "Apply to all masters" on → every master is transformed; interpolation
+     compatibility preserved (no missing/extra nodes vs pre-slant masters).
+   - Non-empty backgrounds are never touched; closing the window while a
+     preview is active reverts the preview.
+
+10. **Coverage Check panel** (Script → DocRepair Tools → Coverage Check):
+   - Reference dropdown: "Auto (per-master config)" checks every pinned
+     master; a config entry, recent file, or "Choose file…" compares just
+     the current master. A picked file joins the shared "Recent ·" list.
+   - Switching to another open font re-checks automatically; glyph edits
+     need the Re-check button.
+   - Direction toggle (Missing here / Missing in ref / Both) switches the
+     searchable gap list between reference→target gaps, target→reference
+     gaps, and both. Status column follows "Missing here" only.
+   - The gap list shows every missing codepoint/variant (no truncation)
+     with ref glyph + your glyph names; the search box filters by
+     codepoint (e.g. `00A0`), glyph name, or Unicode name. Double-click
+     an "unencoded"/"unlinked" row to open the glyph for fixing.
+   - **Write report** saves `coverage-report.md` (both directions) next
+     to the source; **Emit .fea** writes per-master `.fea` files into
+     `coverage-features/` — spot-check rules are in target glyph names
+     and skipped rules correspond to the reported gaps.
+   - Masters without a pinned reference are listed as notes, not errors.
 
 Missing a check counts as a smoke-test failure — file an issue rather
 than fixing on the spot so the coverage gap is visible.

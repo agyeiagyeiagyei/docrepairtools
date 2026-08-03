@@ -331,7 +331,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    KNOWN_SUBCOMMANDS = {"audit", "proof", "-h", "--help", "-V", "--version"}
+    KNOWN_SUBCOMMANDS = {"audit", "proof", "coverage", "-h", "--help", "-V", "--version"}
     if argv and argv[0] not in KNOWN_SUBCOMMANDS and not argv[0].startswith("--"):
         # First token is a positional but not a subcommand — treat as
         # accidental typo; parse anyway so the user sees the usage.
@@ -364,6 +364,46 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     add_proof_subparser(subparsers)
 
+    coverage_parser = subparsers.add_parser(
+        "coverage",
+        help="Reference→target coverage gaps (what the reference has that the target lacks).",
+        description=(
+            "Inverse of the audit: list every codepoint and GSUB-reachable "
+            "variant present in the reference but missing from the target. "
+            "Exit code 1 when anything is truly absent (glyphs that exist "
+            "but are unencoded/unlinked are warnings only)."
+        ),
+    )
+    coverage_parser.add_argument(
+        "--target", required=True,
+        help="Path to target font (.glyphspackage / .glyphs / .ttf / .otf)",
+    )
+    coverage_parser.add_argument(
+        "--pair", action="append", default=[], type=_split_pair,
+        metavar="NAME=REFERENCE",
+        help="Map a target master name to a reference font. Repeatable. "
+             "Required unless --from-config is given.",
+    )
+    coverage_parser.add_argument(
+        "--from-config", action="store_true", default=None,
+        help="Build pairs from [instances.NAME] in the config file.",
+    )
+    coverage_parser.add_argument(
+        "--output", default=None,
+        help="Markdown report path (default: glyph-audit-coverage.md).",
+    )
+    coverage_parser.add_argument(
+        "--emit-features", default=None, metavar="DIR",
+        help="Also decompile each reference's GSUB into .fea files (one per "
+             "pair, written to DIR) with rules rewritten into target glyph "
+             "names. Rules referencing missing glyphs are skipped.",
+    )
+    coverage_parser.add_argument(
+        "--config", default=None,
+        help="Path to config TOML (default: ~/.glyph-audit/config.toml).",
+    )
+    coverage_parser.set_defaults(_run=lambda a: _run_coverage(a, coverage_parser))
+
     args = parser.parse_args(argv)
     if args.cmd is None:
         parser.print_help(sys.stderr)
@@ -373,6 +413,108 @@ def main(argv: Optional[list[str]] = None) -> int:
         return proof_dispatch(args)
     # `_run` is set by _build_audit_parser via set_defaults above.
     return args._run(args)
+
+
+def _run_coverage(args, parser) -> int:
+    """Execute the `coverage` subcommand: reference→target gap report."""
+    from .coverage import (
+        ABSENT,
+        build_feature_file,
+        coverage_gaps,
+        feature_table,
+        glyph_matrix,
+        reverse_gaps,
+        write_markdown as write_coverage_markdown,
+    )
+
+    try:
+        config_defaults = load_defaults(args.config)
+    except ConfigError as e:
+        print(f"FAIL: {e}", file=sys.stderr)
+        return 2
+
+    from_config = args.from_config
+    if from_config is None:
+        from_config = bool(config_defaults.get("from_config", False))
+    output = args.output or config_defaults.get(
+        "coverage_output", "glyph-audit-coverage.md"
+    )
+
+    pair_list: list[tuple[str, str, dict[str, float]]] = [
+        (name, spec, {}) for (name, spec) in args.pair
+    ]
+    if from_config:
+        try:
+            instances = load_instances(args.config)
+        except ConfigError as e:
+            print(f"FAIL: {e}", file=sys.stderr)
+            return 2
+        pair_list.extend((inst.name, inst.ref, inst.axes) for inst in instances)
+    if not pair_list:
+        parser.error("at least one --pair or --from-config (with [instances]) is required")
+
+    results = []
+    skipped: list[str] = []
+    any_absent = False
+    for master_name, ref_spec, ref_axes in pair_list:
+        print(f"Loading target master {master_name!r} ← {args.target}", file=sys.stderr)
+        try:
+            target_view = load_font(args.target, master=master_name,
+                                     label=f"{_basename(args.target)} {master_name}")
+        except (FileNotFoundError, ValueError, RuntimeError) as e:
+            # A pair whose master isn't in this source file is a skip, not
+            # a failure: projects often split masters across files (e.g.
+            # roman + italic sources) while the config lists them all.
+            print(f"  WARNING: skipping pair {master_name!r}: {e}", file=sys.stderr)
+            skipped.append(f"`{master_name}` — {e}")
+            continue
+        print(f"Loading reference {ref_spec!r}", file=sys.stderr)
+        try:
+            reference_view = load_font(ref_spec, axes=ref_axes or None)
+        except (FileNotFoundError, ValueError, RuntimeError) as e:
+            print(f"  FAIL: {e}", file=sys.stderr)
+            return 2
+
+        result = coverage_gaps(target_view, reference_view, pair_label=master_name)
+        result.reverse = reverse_gaps(target_view, reference_view, pair_label=master_name)
+        result.feature_rows = feature_table(target_view, reference_view)
+        result.cp_matrix, result.var_matrix = glyph_matrix(target_view, reference_view)
+        if args.emit_features:
+            import os
+            os.makedirs(args.emit_features, exist_ok=True)
+            fea_text, stats = build_feature_file(target_view, reference_view)
+            safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in master_name)
+            fea_path = os.path.join(args.emit_features, f"{safe}.fea")
+            with open(fea_path, "w", encoding="utf-8") as fh:
+                fh.write(fea_text)
+            result.fea_summary = (
+                f"Wrote `{fea_path}` — {stats['features']} features, "
+                f"{stats['rules']} rules copied, {stats['skipped']} skipped "
+                f"(missing glyphs)."
+            )
+            if stats["skipped_features"]:
+                result.fea_summary += (
+                    " Fully skipped (no servable rules): "
+                    + ", ".join(stats["skipped_features"]) + "."
+                )
+        results.append(result)
+        cp_absent = sum(1 for g in result.codepoint_gaps if g.kind == ABSENT)
+        var_absent = sum(1 for g in result.variant_gaps if g.kind == ABSENT)
+        if cp_absent or var_absent:
+            any_absent = True
+        print(
+            f"  {master_name}: {len(result.codepoint_gaps)} codepoint gaps "
+            f"({cp_absent} absent), {len(result.variant_gaps)} variant gaps "
+            f"({var_absent} absent).",
+            file=sys.stderr,
+        )
+
+    write_coverage_markdown(results, output, skipped=skipped)
+    print(f"Wrote {output}", file=sys.stderr)
+    if not results and skipped:
+        print("FAIL: every pair was skipped — nothing to report.", file=sys.stderr)
+        return 2
+    return 1 if any_absent else 0
 
 
 def _basename(path: str) -> str:

@@ -24,15 +24,88 @@ The `glyph-audit` console script and `python -m GlyphAudit` are equivalent.
 
 ## Filter values
 
+One value per Glyphs palette colour, plus two convenience aliases:
+
 | `--filter` | Glyphs colour index | Conventional meaning |
 |---|---|---|
+| `red` | 0 | |
+| `orange` | 1 | |
+| `brown` | 2 | |
 | `yellow` | 3 | Ready for testing |
 | `light-green` | 4 | Passed inspection |
 | `green` | 5 | Production-ready |
-| `ready` | 3 OR 4 | Either of the above |
+| `light-blue` | 6 | |
+| `blue` | 7 | |
+| `purple` | 8 | |
+| `pink` | 9 | |
+| `light-gray` | 10 | |
+| `gray` | 11 | |
+| `ready` | 3 OR 4 | Yellow or light-green — the project convention for "flagged for proofing" |
+| `no-colour` | — | Glyphs with no colour label at all |
 | `all` *(default)* | — | No filtering |
 
+## Coverage subcommand
+
+`glyph-audit coverage` answers "**is anything the reference covers missing from my font?**" — the gaps that make documents fall back to another font.
+
+```
+glyph-audit coverage --target PATH [--pair NAME=REF | --from-config]
+                     [--output PATH] [--emit-features DIR] [--config PATH]
+```
+
+The markdown report (default `glyph-audit-coverage.md`) contains, per master/reference pair:
+
+- **Missing codepoints** — grouped by Unicode block, with character names and reference glyphs. **Missing feature variants** — grouped by feature tag. Both listed in *both directions* (reverse is informational).
+- **Feature matching table** — per OpenType feature: reference rules vs rules the target can serve (`full` / `partial` / `missing`).
+- **Full yes/no matrix** — every codepoint and variant in the union of both fonts, `glyph | target | reference`.
+
+Gap classification: **absent** (fails the run), `unencoded-in-target` (glyph exists but has no Unicode value — warning), `present, not feature-linked` (warning). Exit code `1` on true absences, else `0` — usable as a Make/CI gate.
+
+`--emit-features DIR` also writes one `.fea` per pair: the reference's GSUB decompiled and rewritten into *target* glyph names, ready to review and import into Glyphs. Rules referencing glyphs the target lacks are skipped and counted. Kerning (GPOS) is reported but not copied.
+
+Pairs whose master isn't in the target source are skipped with a warning, so projects with masters split across files (roman + italic sources) can run `--from-config` per file.
+
+The same checks run inside Glyphs.app via **Script → DocRepair Tools → Coverage Check**, against the active font, with a searchable missing-glyph list and one-click report/`.fea` export.
+
+## Proof subcommands
+
+`glyph-audit proof` compiles a colour-filtered subset of a Glyphs source into a proof TTF and serves a side-by-side browser comparison against configured reference fonts. It reads `glyph-audit.toml` from the project root (override with `--config`) and requires the `proof` extra: `pip install "docrepair-tools[proof]"`.
+
+| Command | What it does |
+|---|---|
+| `proof build` | One-shot compile of all sources → proof TTFs + manifests in the output dir. |
+| `proof watch` | Build once, then rebuild automatically on source changes. |
+| `proof serve` | Build, then serve the web app at `http://127.0.0.1:5173` and open it in a browser. |
+| `proof panel install` | Symlink the Glyphs.app panels (Width Audit, Proof Builder, Slant Glyphs, Coverage Check) into Glyphs 3's Scripts folder. |
+
+Flags shared by `build` / `watch` / `serve`:
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--config PATH` | discovered from CWD | Path to `glyph-audit.toml`. |
+| `--source PATH` | from config | Override the config's source list. Repeatable. |
+| `--colors LIST` | from config | Comma-separated Glyphs colour keys (`0`–`11` or `none`). Overrides `[proof].colors`. |
+
+`proof serve` additionally accepts:
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--host ADDR` | `127.0.0.1` | Bind address. |
+| `--port N` | `5173` | Port (matches Vite's dev-server default). |
+| `--no-browser` | off | Skip auto-opening the browser on start. |
+| `--no-build` | off | Skip the initial build (output dir already fresh). |
+| `--watch` | off | Also spawn a watcher so source edits rebuild live. |
+
+Example — export the yellow-tagged glyphs as variable proof TTFs and compare live in the browser:
+
+```bash
+glyph-audit proof build --colors 3 --source A.glyphspackage --source "A Italic.glyphspackage"
+glyph-audit proof serve --watch
+```
+
 ## Exit codes
+
+For the audit invocation:
 
 - `0` — all matched within tolerance, or first-run bootstrap created config
 - `1` — at least one mismatch
@@ -98,7 +171,7 @@ audit:
 
 ```bash
 make audit                                                # default target
-make audit TARGET=sources/MyTypeface-working.glyphspackage
+make audit TARGET=sources/MyTypeface-Italic.glyphspackage
 ```
 
 The leading `-` tells `make` to ignore `glyph-audit`'s exit code 1 (the "I found mismatches" signal — expected during proofing, not a build failure).
@@ -116,7 +189,7 @@ audit() {
 
 ```bash
 audit                                                # uses the default
-audit sources/MyTypeface-working.glyphspackage
+audit sources/MyTypeface-Italic.glyphspackage
 ```
 
 ### Per-project config

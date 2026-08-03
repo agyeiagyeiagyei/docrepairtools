@@ -136,6 +136,14 @@ def fontview_from_master(gs_font, master) -> FontView:
                 except (TypeError, ValueError):
                     pass
 
+    # Glyphs' AUTOMATIC frac feature routes slash through a glyph named
+    # "fraction" whenever one exists — no .suffix convention involved.
+    # Mirror that here or the coverage panel flags the glyph as
+    # present-unlinked even though the compiled font will contain
+    # `sub slash by fraction;` (verified against generated feature code).
+    if "fraction" in all_names and 0x2F in cmap:
+        gsub_variants.setdefault((0x2F, "frac"), "fraction")
+
     return FontView(
         label=f"{gs_font.familyName} {master.name}",
         source=gs_font.filepath or "<unsaved>",

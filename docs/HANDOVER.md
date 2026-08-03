@@ -16,13 +16,14 @@ replacement fonts* that can stand in for an original document face without
 reflowing the documents that used it. The recurring need is **"match-but-not-quite"**:
 same advances and coverage as a reference, distinct outlines.
 
-The toolkit ships as one Python distribution with three surfaces:
+The toolkit ships as one Python distribution with these surfaces:
 
 | Surface | What it does | Entry point |
 |---|---|---|
 | **Audit CLI** | Tiered coverage/width comparison of a target vs reference fonts → Markdown report | `glyph-audit --target … --pair …` |
-| **Proof pipeline** | Subset a Glyphs source to a proof TTF, serve a side-by-side browser compare, watch+rebuild | `glyph-audit proof {build,watch,serve}` |
-| **Glyphs.app panels** | Live width-audit table + edit-view reference overlay; proof-pipeline launcher | Script → DocRepair Tools → {Glyph Audit, Make Proof} |
+| **Coverage CLI** | Inverse direction: reference→target gaps (missing codepoints + GSUB variants), per-feature matching table, yes/no glyph matrix, GSUB→.fea feature copying | `glyph-audit coverage --target … [--emit-features DIR]` |
+| **Proof pipeline** | Subset a Glyphs source to a proof TTF, serve a side-by-side browser compare, watch+rebuild | `glyph-audit proof {build,watch,serve,panel install}` |
+| **Glyphs.app panels** | Live width-audit table + edit-view reference overlay; proof-pipeline launcher; slant-with-width-matching tool; coverage gap checker | Script → DocRepair Tools → {Width Audit, Proof Builder, Slant Glyphs, Coverage Check} |
 
 ### Naming layers (they intentionally differ)
 
@@ -32,7 +33,7 @@ The toolkit ships as one Python distribution with three surfaces:
 | PyPI distribution | `docrepair-tools` |
 | Console script | `glyph-audit` |
 | Import package | `GlyphAudit` |
-| Glyphs menu | DocRepair Tools ▸ Glyph Audit · Make Proof |
+| Glyphs menu | DocRepair Tools ▸ Width Audit · Proof Builder · Slant Glyphs · Coverage Check |
 
 The distribution is the umbrella brand; the console script and import package
 stay short so existing code, `glyph-audit.toml` configs, and `glyph-audit …`
@@ -52,7 +53,8 @@ docrepairtools/
 │   ├── release.md              # PyPI publish + trusted-publisher setup
 │   ├── configuration.md        # ~/.glyph-audit/config.toml schema
 │   ├── cli.md, concepts.md, ai-summary.md
-│   └── screenshots/            # proof-web.png, width-audit-panel.png (README refs)
+│   └── screenshots/            # placeholder README only — proof-web.png and
+│                               # width-audit-panel.png (README refs) still to be captured
 ├── .github/workflows/publish.yml  # tag-driven build+publish (builds webapp bundle first)
 ├── tests/proof/                # 131 tests
 └── src/GlyphAudit/
@@ -100,6 +102,10 @@ surgery. Do it only if a real second consumer appears.
   LSB/advance metric-delta bands (italic-slanted), pairing label, per-master
   reference resolution following the actively-edited master.
 - **Pin-to-master** config writer (surgical TOML edits, comment-preserving, 13 tests).
+- Audit table flags the **actively-edited glyph** with ▶ (first column), resolved
+  from `currentTab.layers[layersCursor]` on each live refresh.
+- Both panels opt out of macOS session restoration (`setRestorable_(False)`) so
+  they can't resurrect at launch — visible only when toggled from the menu.
 - Full **color-filter palette** in the audit dropdown (12 colours + ready + no-colour).
 - Renames complete: repo → `docrepairtools`, dist → `docrepair-tools`. GitHub
   description updated.
@@ -132,6 +138,9 @@ surgery. Do it only if a real second consumer appears.
 6. **`src/GlyphAudit/proof/webapp/node_modules/` in the source tree.** Harmless —
    gitignored and excluded from the wheel via `packages.find` exclude — but a
    stray `flatted/python/flatted.py` shows up in tree walks. Don't be alarmed.
+7. **README screenshots not captured yet.** `docs/screenshots/` holds only a
+   placeholder README; `proof-web.png` and `width-audit-panel.png` (referenced
+   by the top-level README) still need to be taken and dropped in.
 
 ---
 
@@ -180,6 +189,26 @@ pip package (one `pip install -U` updates everything).
 Panels depend on Glyphs's embedded Python having `GlyphAudit` importable — the
 editable/pip install on PATH handles that; each panel also has an inline
 sys.path bootstrap that walks up to the checkout's `src/` as a fallback.
+
+Panel inventory: `audit_panel.py` (width audit), `proof_panel.py` (proof
+pipeline launcher), `slant_panel.py` (slant selected glyphs with a
+snapshot-based preview + in-panel slanted-vs-reference outline compare,
+then match advances to the per-master reference), `coverage_panel.py`
+(reference→target gap check on the open font + markdown report and `.fea`
+emit — the UI front-end for the `coverage` CLI subcommand). The slant
+panel's reference dropdown shares the audit panel's config pins and
+recent-files state (`Auto` = per-master config pin); the coverage panel
+reads the same `[instances.*]` pins. `slant_panel.py` keeps its math in the Glyphs-free `GlyphAudit/slant.py`
+(shear matrix, pivot, ref-advance lookup, UPM scaling) and
+`GlyphAudit/extrema.py` (cubic derivative roots, de Casteljau subdivision,
+least-squares segment merge, extremum-handle balancing) so the logic is
+pytest-covered — same pattern as `configwrite.py` / `matching.py`.
+Glyphs-side selectors (`insertNodeWithPathTime:` — pathTime uses the
+segment END node index, `removeNodes:`, settable `GSPath.nodes`) plus the
+whole insert→merge→harmonize pipeline were verified headless by loading
+GlyphsCore via PyObjC outside the app; Glyphs' own
+`removeNodeCheckKeepShape:` was measured to stretch handles (~1 unit on a
+test circle) and is avoided for cubic-cubic merges.
 
 ---
 

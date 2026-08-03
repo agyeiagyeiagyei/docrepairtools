@@ -150,6 +150,7 @@ function App() {
       setProofConfig(config)
       setConfigLoaded(true)
       setConfigReason(source === 'fallback' ? reason : null)
+      document.title = `Docrepair Proof: ${config.familyName.replace(/\s+Proof$/, '')}`
       // Default the reference dropdown to the first reference the config
       // gave us, if any — otherwise leave the previous selection.
       if (config.references[0]?.name) {

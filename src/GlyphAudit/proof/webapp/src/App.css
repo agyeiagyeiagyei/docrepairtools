@@ -117,6 +117,22 @@
   outline: none;
 }
 
+/* The panel's font + size live in an inline style on `.editable` itself, so
+ * anything nested inside it must inherit rather than carry its own. Pasted
+ * and drag-dropped HTML arrives wrapped in `<span style="font-family: …">`
+ * (Chrome copies the source's computed style), and an inline family on a
+ * child would otherwise outrank the panel's own — the proof panel would
+ * quietly start rendering whatever font the text came from. TextPanel already
+ * strips formatting on paste; this is the backstop for every other route in
+ * (drag-drop, execCommand quirks, content restored from a stale session).
+ * Deliberately narrow: `<b>`/`<i>` from the B/I buttons carry no inline
+ * style, and the feature / mismatch spans only set font-feature-settings,
+ * text-decoration and color — none of which this touches. */
+.panel .editable * {
+  font-family: inherit !important;
+  font-size: inherit !important;
+}
+
 
 .panel .body {
   min-height: 200px;
