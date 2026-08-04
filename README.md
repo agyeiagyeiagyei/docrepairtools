@@ -1,4 +1,4 @@
-# GlyphAudit — DocRepair Tools
+DocRepair Tools
 
 Tools for building **metrics-compatible replacement fonts** — same advances and coverage as the original document face, distinct outlines. The whole toolkit answers one question fast, per glyph, per master: *does this typeset like the reference?*
 
